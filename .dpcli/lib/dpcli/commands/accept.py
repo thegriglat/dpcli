@@ -40,7 +40,19 @@ def parse_expect(exp):
     raise DpError(f"expect «{s}»: не понял (exit=N | re:… | !re:… | num:<regex> <op>N | tests)")
 
 
-TESTS_SUMMARY = re.compile(r"(\d+) тестов, (\d+) упало(?:, (\d+) пропущено)?")
+TESTS_SUMMARY = r"(?P<total>\d+) тестов, (?P<failed>\d+) упало(?:, (?P<skipped>\d+) пропущено)?"
+
+
+def tests_summary_rx():
+    """Регэксп итога прогона тестов: checks.tests_summary (группы total, failed; skipped — по желанию)."""
+    src = config.get("checks.tests_summary") or TESTS_SUMMARY
+    try:
+        rx = re.compile(src, re.M)
+    except re.error as e:
+        raise DpError(f"checks.tests_summary «{src}»: неверный регэксп ({e})")
+    if not {"total", "failed"} <= set(rx.groupindex):
+        raise DpError(f"checks.tests_summary «{src}»: нужны группы (?P<total>…) и (?P<failed>…)")
+    return rx
 
 
 def judge(exp, code, out):
@@ -50,15 +62,16 @@ def judge(exp, code, out):
         ok &= code == exp["exit"]
         vals.append(f"exit {code}")
     if exp.get("tests"):
-        m = list(TESTS_SUMMARY.finditer(out))
+        m = list(tests_summary_rx().finditer(out))
         if m:
-            tot, fail, skip = (int(x or 0) for x in m[-1].groups())
+            g = m[-1].groupdict()
+            tot, fail, skip = (int(g.get(k) or 0) for k in ("total", "failed", "skipped"))
             ok &= fail == 0 and tot > 0
             vals.append(f"{tot - fail}/{tot}" + (f" (пропуск {skip})" if skip else ""))
             if fail:
                 names = re.findall(r"^\s*FAIL (\S+)", out, re.M)
                 vals.append("FAIL " + ",".join(n.split("::")[-1] for n in names[:3]))
-        else:  # итог «N тестов, M упало» не напечатан — судим по коду выхода раннера
+        else:  # итог (checks.tests_summary) не напечатан — судим по коду выхода раннера
             ok &= code == 0
             if "exit" not in exp:
                 vals.append(f"exit {code}")

@@ -29,11 +29,15 @@ DEFAULTS = {
         "env": {},  # доп. переменные окружения проверок; {tmpdir} — свежий временный каталог
         "tests": None,  # шаблон команды для проверок {tests: ФИЛЬТР}; {filter} — фильтр
         "log_dir": "build/dpcli",
+        # регэксп итога прогона тестов: группы (?P<total>) и (?P<failed>), по желанию (?P<skipped>);
+        # None — встроенный «N тестов, M упало[, K пропущено]»; нет совпадения — судим по коду выхода
+        "tests_summary": None,
     },
     "artifacts_dir": "build/artifacts",
     "reserved_codes": [],
     "gc": {"ignore_dirs": ["build", "__pycache__"], "ignore_globs": []},
     "sem": {
+        "enabled": False,  # смысловой поиск (search --sem, index) — опционально, нужен Ollama
         "model": "bge-m3",
         "url": "http://localhost:11434",
         "cache_dir": "~/.cache/dpcli/{project}",

@@ -34,6 +34,10 @@ checks:
   # Шаблон команды для проверок вида {tests: …}; {filter} — фильтр тестов из карточки.
   # Не задан — проверка tests недоступна. Пример: "python3 -m pytest -q -k {filter}"
   # tests: "python3 -m pytest -q -k {filter}"
+  # Регэксп итога прогона тестов для проверок {tests: …}: группы (?P<total>…) и (?P<failed>…),
+  # по желанию (?P<skipped>…); берётся последнее совпадение. Нет совпадения — судим по коду выхода.
+  # По умолчанию — «N тестов, M упало[, K пропущено]». Регэксп — в одинарных кавычках (без экранирования \\).
+  # tests_summary: '(?P<total>\d+) tests, (?P<failed>\d+) failed'
   # Куда пишутся логи проверок: <log_dir>/<ID>/.
   log_dir: build/dpcli
 
@@ -51,6 +55,9 @@ gc:
 
 # Смысловой поиск (dpcli index / dpcli search --sem) через Ollama.
 sem:
+  # Опционально: выключено по умолчанию. Включить — enabled: true и Ollama с моделью
+  # (ollama pull bge-m3). Без него работает обычный search; merge индекс не трогает.
+  enabled: false
   model: bge-m3
   url: "http://localhost:11434"
   cache_dir: "~/.cache/dpcli/{project}"
