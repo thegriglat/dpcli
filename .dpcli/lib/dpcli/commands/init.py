@@ -341,7 +341,9 @@ class Init:
             k = st.split(" (")[0]
             counts[k] = counts.get(k, 0) + 1
         print("Итого: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
-        print(f"\nДальше: главная сессия читает {self.vals['workflow']}; модуль — "
+        print(f"\nЗакоммитьте .dpcli/, .claude/, CLAUDE.md и конфиг в {self.vals['main_branch']} — копии модулей и задач "
+              "создаются из веток и без коммита не увидят ни dpcli, ни агентов.")
+        print(f"Дальше: главная сессия читает {self.vals['workflow']}; модуль — "
               f"`{self.cli} module new <модуль> --code XX`, затем задачи — `{self.cli} task new …` "
               f"(справка `{self.cli} -h`). Агенты и процесс правятся в .dpcli/, затем снова `{self.cli} init`.")
         return 0
