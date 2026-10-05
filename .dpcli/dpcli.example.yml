@@ -75,3 +75,16 @@ agents_dir: .dpcli/agents
 
 # Путь к описанию процесса (ссылки в dpcli task show и текстах агентов).
 workflow: .claude/dpcli-workflow.md
+
+# Документация (dpcli docs): проверка frontmatter, индекс, реестры.
+docs:
+  # Дополнительные файлы под проверку (шаблоны путей от корня проекта), кроме {docs_dir}/**/*.md.
+  extra: []
+  # Исключения (шаблоны путей от корня; * захватывает и слэши). По умолчанию — архив.
+  exclude:
+    - "docs/archive/**"
+  # Допустимые значения type и status во frontmatter.
+  types: [guide, plan, contract, research, reference, journal, registry]
+  statuses: [active, idea, postponed, closed, superseded]
+  # Предупреждение, если файл больше этого размера (КБ).
+  max_kb: 40

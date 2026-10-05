@@ -12,8 +12,8 @@
 2. **Раскладка дистрибутива** (всё, что копируется в проект):
    ```
    .dpcli/
-     dpcli                 # точка входа (python3, исполняемый): добавляет .dpcli в sys.path, dpcli.cli.main()
-     dpcli/                # пакет
+     dpcli                 # точка входа (python3, исполняемый): добавляет .dpcli/lib в sys.path, dpcli.cli.main()
+     lib/dpcli/            # пакет (lib/ — чтобы не конфликтовать с файлом точки входа)
        __init__.py         # VERSION (бывш. DP_VERSION)
        cli.py              # argparse: build() собирает парсер из register(sp) модулей команд; main()
        config.py           # загрузка dpcli.json | dpcli.yml (+ мини-YAML-парсер), значения по умолчанию
@@ -75,10 +75,10 @@
 ## TODO
 
 - [x] 0. Исследовать исходники, составить план, `git init`
-- [ ] 1a. Ядро: config/yamlmini/util/gitx/journal/agents/reexec + разрезание всех команд по `commands/*`, точка входа (агент «core»)
-- [ ] 1b. Шаблоны: generic агенты, скилл start-to-do, workflow.md, блок CLAUDE.md, dpcli.example.yml (агент «templates»)
+- [x] 1a. Ядро: config/yamlmini/util/gitx/journal/agents/reexec + разрезание всех команд по `commands/*`, точка входа (агент «core»)
+- [x] 1b. Шаблоны: generic агенты, скилл start-to-do, workflow.md, блок CLAUDE.md, dpcli.example.yml (агент «templates»)
 - [ ] 2a. `dpcli init` + интеграция ролей агентов (agents.py ↔ task/report/accept)
-- [ ] 2b. `dpcli docs` (порт dp_docs.py, конфигурируемый)
+- [x] 2b. `dpcli docs` (порт dp_docs.py, конфигурируемый)
 - [ ] 2c. Тесты (unittest, временный git-репозиторий): полный цикл module new → task new → report → accept → review → merge → gc
 - [ ] 3. README (справка, бывш. dp.md), сквозная проверка: копия `.dpcli` в пустой проект → init → цикл
 - [ ] 4. Ревью кода, грep на остатки deltaplan/godot/greg, финальный коммит

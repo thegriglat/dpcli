@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""dpcli — журнал, карточки задач и приёмка модулей. Точка входа: пакет лежит в lib/dpcli рядом с этим файлом."""
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 10):
+    sys.exit("dpcli: нужен Python ≥ 3.10")
+sys.dont_write_bytecode = True  # без __pycache__ внутри .dpcli: копии остаются чистыми для git
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+from dpcli.cli import main  # noqa: E402
+
+main()
