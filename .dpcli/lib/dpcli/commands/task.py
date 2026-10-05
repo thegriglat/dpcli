@@ -1,4 +1,4 @@
-"""task new|show|set|note|sync, module init."""
+"""task new|show|brief|set|note|sync, module init."""
 import json
 import re
 import sys
@@ -70,12 +70,101 @@ def cmd_task_new(a):
     if card["type"] not in types:
         raise DpError(f"--type «{card['type']}»: не исполнитель (есть: {', '.join(types) or 'нет'}; "
                       f"агенты — {config.get('agents_dir')}/*.md, dpcli_role: executor)")
+    validate_checks(card.get("accept"))
     ensure_module(a.module, home)
     card["created"] = card.get("created") or now()
     write_json(p, card)
     add_event(home, a.id, "created", by_default(a), note=card.get("title", ""))
-    empty = [k for k in ("goal", "scope", "accept") if not card.get(k)]
-    print(f"{a.id}: {rel(p)}" + (f"; пусто: {', '.join(empty)}" if empty else ""))
+    empty = missing_for_brief(card)
+    print(f"{a.id}: {rel(p)}" + (f"; пусто: {', '.join(empty)} — brief откажет (дополните: {CLI} task set {a.id} …)"
+                                  if empty else ""))
+    if not a.no_copy:
+        print(make_copy(card))
+
+
+def validate_checks(checks):
+    """Проверки карточки разбираются сразу (task new/set), а не только в accept."""
+    from .accept import parse_expect
+    for c in checks or []:
+        if not isinstance(c, dict) or not c.get("name"):
+            raise DpError(f"проверка {json.dumps(c, ensure_ascii=False)}: нужен объект с name")
+        if c.get("tests") and "expect" not in c:
+            continue
+        exp = parse_expect(c.get("expect"))
+        for k in ("re", "not_re", "num"):
+            if exp.get(k):
+                try:
+                    re.compile(exp[k])
+                except re.error as e:
+                    raise DpError(f"проверка «{c['name']}»: неверный регэксп «{exp[k]}» ({e})")
+
+
+def make_copy(card):
+    """Рабочая копия и ветка задачи: git worktree add -b <branch> <copy> <base>; есть — переиспользовать."""
+    br, base = card["branch"], card["base"]
+    cp = Path(card["copy"]).expanduser()
+    have = gitx.copy_of(br)
+    if have:
+        return f"копия: {pretty(have)} (уже есть, ветка {br})"
+    if cp.exists() and any(cp.iterdir()):
+        return f"копия не создана: {pretty(cp)} занят не копией ветки {br} — создайте сами или --copy"
+    if gitx.branch_exists(br):
+        r = gitx.gitr("worktree", "add", str(cp), br)
+    elif gitx.branch_exists(base):
+        r = gitx.gitr("worktree", "add", "-b", br, str(cp), base)
+    else:
+        return f"копия не создана: нет ветки {base} ({CLI} module new {card['module']})"
+    gitx.reset_worktrees()
+    if r.returncode:
+        raise DpError(f"git worktree add {pretty(cp)}: {gitx.gerr(r)}")
+    return f"копия: {pretty(cp)}, ветка {br} от {base}"
+
+
+def missing_for_brief(card):
+    return [k for k in ("goal", "scope", "accept") if not card.get(k)]
+
+
+BRIEF_W = 120
+
+
+def _fit(items, room):
+    """Пункты через «, » в пределах room символов; не влезло — «… (+N: task show)»."""
+    items = [str(x) for x in items]
+    out = []
+    for x in items:
+        if out and len(", ".join(out + [x])) > room:
+            return ", ".join(out) + f" … (+{len(items) - len(out)}: task show)"
+        out.append(x)
+    return ", ".join(out)
+
+
+def cmd_task_brief(a):
+    """Готовое сообщение-задание исполнителю (или ревьюеру): координатор отправляет его как есть."""
+    mod, home = find_task(a.id)
+    card = read_json(home / "tasks" / f"{a.id}.json")
+    miss = missing_for_brief(card)
+    if miss:
+        raise DpError(f"{a.id}: карточка не готова к выдаче — нет: {', '.join(miss)} "
+                      f"({CLI} task set {a.id} goal=… scope+=… | --check …)")
+    tid, cp, br, base = card["id"], card.get("copy"), card.get("branch"), card.get("base")
+    if a.review:
+        L = [f"Ревью {tid}: копия {cp}, ветка {br}.",
+             f"Данные: {CLI} task show {tid} --full; {CLI} report {tid} --show.",
+             f"Вердикт: {CLI} review {tid} --verdict accept|rework --from r.json (схема --template).",
+             f"Ответ: «{tid} review accept|rework <n>»"]
+    else:
+        sect = card.get("plan_ref") or "<раздел>"
+        bound = "Границы: только " + _fit(card["scope"], BRIEF_W - 40)
+        if card.get("dont_touch"):
+            bound += "; не трогать " + _fit(card["dont_touch"], max(30, BRIEF_W - len(bound) - 14))
+        L = [f"{tid} {card.get('type', '')}: {card.get('title', '')}",
+             f"Копия: {cp}  ветка: {br} (от {base})",
+             f"Делать: {CLI} task show {tid}  · план: {CLI} plan {mod} {sect}",
+             bound,
+             f"Готово, когда: {CLI} accept {tid} --dry → PASS; затем {CLI} report {tid} < r.json "
+             f"(схема: {CLI} report --template {tid})",
+             f"Ответ: одна строка «{tid} reported» | «{tid} blocked: <причина ≤15 слов>» | «{tid} contract: <что нужно поменять>»"]
+    print("\n".join(L))
 
 
 def fmt_check(c):
@@ -152,6 +241,7 @@ def cmd_task_set(a):
     for f in a.test or []:
         acc[:] = [c for c in acc if c.get("name") != f] + [{"name": f, "tests": f}]
         changed.append(f"accept:{f}")
+    validate_checks(card.get("accept"))
     if not changed:
         raise DpError("нечего менять: поле=значение, --check, --test, --drop-check, --contract")
     card["edited"] = now()
@@ -258,8 +348,8 @@ def cmd_module_init(a):
 
 
 def register(sp):
-    t = sp.add_parser("task", help="карточка задачи: new | show | set | note | sync (sync — влить ветку модуля в ветку задачи)")
-    tsp = t.add_subparsers(dest="sub", required=True, parser_class=Parser, metavar="new|show|set|note|sync")
+    t = sp.add_parser("task", help="карточка задачи: new | show | brief | set | note | sync (sync — влить ветку модуля в ветку задачи)")
+    tsp = t.add_subparsers(dest="sub", required=True, parser_class=Parser, metavar="new|show|brief|set|note|sync")
     q = tsp.add_parser("new", help="создать карточку")
     q.add_argument("module"); q.add_argument("id", nargs="?", help="<КОД>-[этап]<n>[буква]; без ID — следующий номер модуля")
     q.add_argument("--stage", metavar="БУКВА", help="этап для авто-номера: --stage P → следующий <КОД>-P<n>")
@@ -272,8 +362,13 @@ def register(sp):
     q.add_argument("--test", action="append", metavar="ФИЛЬТР", help="проверка: тесты проекта (checks.tests, {filter}=ФИЛЬТР), 0 упало")
     q.add_argument("--check", action="append", nargs=3, metavar=("ИМЯ", "CMD", "EXPECT"),
                    help="EXPECT: exit=N | re:<regex> | !re:<regex> | num:<regex с группой> <op>N | tests")
+    q.add_argument("--no-copy", dest="no_copy", action="store_true",
+                   help="не создавать рабочую копию и ветку задачи (по умолчанию git worktree add -b <ветка> <копия> <base>)")
     q.add_argument("--force", action="store_true"); q.add_argument("--by")
     q.set_defaults(func=cmd_task_new)
+    q = tsp.add_parser("brief", help="готовое сообщение-задание исполнителю (--review — ревьюеру); отправлять как есть")
+    q.add_argument("id"); q.add_argument("--review", action="store_true")
+    q.set_defaults(func=cmd_task_brief)
     q = tsp.add_parser("show", help="карточка для исполнителя (коротко)")
     q.add_argument("id"); q.add_argument("--json", action="store_true")
     q.add_argument("--full", action="store_true", help="полное задание исполнителю: карточка + правила + заметки, пункты по строке")

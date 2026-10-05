@@ -46,6 +46,8 @@ DEFAULTS = {
     "jobs": {"dir": "~/.cache/dpcli/{project}/jobs", "tmux_session": "dp", "cpu_slots": None},
     "locks": None,  # каталог замков lock cpu|gpu; по умолчанию <jobs.dir>/locks
     "agents_dir": ".dpcli/agents",
+    # свои агенты проекта (.claude/agents) в процессе dpcli без правки их файлов: {имя: {role, review}}
+    "roles": {},
     "workflow": ".claude/dpcli-workflow.md",
 }
 

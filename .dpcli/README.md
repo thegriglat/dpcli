@@ -29,8 +29,9 @@
 
 Режимы `init`:
 
-- повторный запуск безопасен: ничего не меняется, если результат уже актуален; чужие (изменённые вручную) файлы без `--force` не перезаписываются — выводится сообщение;
-- `--force` — перезаписать и изменённые файлы;
+- повторный запуск безопасен: ничего не меняется, если результат уже актуален; что записал `init`, учтено в `.claude/.dpcli-manifest.json`; такие файлы, изменённые вручную, без `--force` не перезаписываются — выводится сообщение;
+- файлы проекта (нет в манифесте) `init` не перезаписывает и не удаляет никогда, даже с `--force`: если в `.claude/agents` уже есть агент с именем агента dpcli — агент dpcli пропускается («пропущен — агент проекта; роль: см. roles в конфиге»); так же скилл с тем же именем и файл процесса. `CLAUDE.md` и `settings.json` — точечные вставки (блок между маркерами, одно разрешение);
+- `--force` — перезаписать/удалить изменённые вручную файлы из манифеста;
 - `--check` — только проверить, актуально ли настроено (ничего не пишет);
 - `--dry-run` — показать, что было бы сделано;
 - `--json` | `--yaml` — формат конфига, если он создаётся (по умолчанию `dpcli.yml`).
@@ -50,22 +51,44 @@
 - `artifacts_dir`, `reserved_codes`, `gc.ignore_dirs`, `gc.ignore_globs`;
 - `sem` (`enabled: false` по умолчанию, `model`, `url`, `cache_dir`, `globs`), `jobs` (`dir`, `tmux_session`, `cpu_slots`), `locks`;
 - `agents_dir` (`.dpcli/agents`), `workflow` (`.claude/dpcli-workflow.md`);
+- `roles` — роли своих агентов проекта: `{имя: {role: coordinator|executor|reviewer|status, review: bool}}`; реестр агентов = `agents_dir` + `.claude/agents` с `dpcli_role` во frontmatter + `roles` (перекрывает); смотреть — `dpcli agents`;
 - `docs` (`extra`, `exclude`, `types`, `statuses`, `max_kb`).
 
 ## Агенты
 
-Определения лежат в `.dpcli/agents/*.md` — обычный формат агента Claude Code (frontmatter `name, description, model, effort, tools/disallowedTools, skills`) плюс ключи dpcli:
+Определения dpcli — `.dpcli/agents/*.md`: формат агента Claude Code (frontmatter `name, description, model, effort, tools/disallowedTools, skills`) плюс ключи dpcli:
 
 - `dpcli_role`: `coordinator` | `executor` | `reviewer` | `status`;
 - `dpcli_review`: `true` | `false` — нужен ли ревьюер после PASS приёмки (для исполнителей).
 
-Поставляются: `dp-coordinator`, `dp-engineer`, `dp-researcher`, `dp-writer`, `dp-mechanic`, `dp-reviewer`, `dp-status`.
+Поставляются: `dp-coordinator` (opus), `dp-engineer`, `dp-researcher`, `dp-writer` (sonnet), `dp-mechanic` (haiku), `dp-reviewer` (opus), `dp-status` (haiku). Тексты агентов короткие; общие правила — только в описании процесса, агенты на него ссылаются.
 
-В тексте агентов работают плейсхолдеры `{{cli}}`, `{{workflow}}`, `{{plan_dir}}`, `{{contracts_dir}}`, `{{main_branch}}`, `{{module_branch}}`, `{{project}}`; `init` подставляет значения из конфига и кладёт результат в `.claude/agents/`.
+Плейсхолдеры `{{cli}}`, `{{workflow}}`, `{{plan_dir}}`, `{{contracts_dir}}`, `{{main_branch}}`, `{{module_branch}}`, `{{project}}` подставляет `init` и кладёт результат в `.claude/agents/`. Агентов проекта `init` не трогает: одноимённый файл в `.claude/agents/` пропускается.
 
-Тип исполнителя в карточке (`task new --type …`) проверяется по списку агентов с `dpcli_role: executor`.
+**Свои агенты в ролях процесса:** ключ `roles` в `dpcli.yml` (имя агента → `role`, `review`) или `dpcli_role`/`dpcli_review` во frontmatter. Тип исполнителя в `task new --type …` проверяется по этому реестру; посмотреть — `.dpcli/dpcli agents`.
 
-**Добавить свой тип исполнителя:** положить `.dpcli/agents/<имя>.md` с `dpcli_role: executor` и `dpcli_review: true|false`, выполнить `.dpcli/dpcli init`; затем `task new … --type <имя>`.
+```yaml
+roles:
+  my-designer: {role: executor, review: true}
+```
+
+**Модели.** Исполнители — sonnet (механика — haiku): с чёткой карточкой (цель, scope, dont_touch, проверки с порогами, контракты) этого достаточно. Opus — только если задача требует проектирования, которое нельзя вынести в план или контракт.
+
+## Протокол сообщений
+
+Агенты не пересказывают журнал, а передают ID и команду; детали читаются командами.
+
+| От → кому | Сообщение |
+|---|---|
+| главная → координатор | `Модуль <м>: копия <путь>, ветка <ветка>. План: dpcli plan <м>. Новое: dpcli inbox <м>.` |
+| координатор → исполнитель | вывод `task brief <ID>` как есть (особенности — в карточку через `task note`) |
+| координатор → ревьюер | вывод `task brief <ID> --review` как есть |
+| исполнитель → координатор | `<ID> reported` \| `<ID> blocked: <причина ≤15 слов>` \| `<ID> contract: <что поменять>` |
+| ревьюер → координатор | `<ID> review accept` \| `<ID> review rework <n>` |
+| координатор → главная | `<м>: <n> accepted, <n> в работе; шлюз Q<n>` или `<м> done` |
+| главная → пользователь | свободно, по `status` / `digest` |
+
+Решения пользователя попадают координатору через `decide` → `inbox`, а не пересказом. Не хватает сведений — вопрос одной строкой. Подробно — в описании процесса (`.claude/dpcli-workflow.md`, раздел «Протокол сообщений»).
 
 ## Флоу работы
 
@@ -80,14 +103,14 @@
    .dpcli/dpcli task show PY-1          # карточка; --full — полное задание исполнителю
    .dpcli/dpcli event PY-1 started --note "dp-engineer"
    ```
-   и запускает **исполнителя** (скилл `start-to-do`): своя копия и ветка, одна задача.
+   `task new` сам создаёт рабочую копию и ветку задачи (`git worktree add -b <task_branch> <task_copy> <ветка модуля>`; есть — переиспользует; `--no-copy` — не создавать). Затем координатор запускает **исполнителя** с сообщением — выводом `.dpcli/dpcli task brief PY-1` как есть (одна задача, своя копия).
 4. Исполнитель читает план по разделам, работает в своей копии, делает пробный прогон `accept PY-1 --dry` и сдаёт отчёт:
    ```
    .dpcli/dpcli plan payments PY-1
    .dpcli/dpcli report --template PY-1 > r.json   # заполнить
    .dpcli/dpcli report PY-1 < r.json
    ```
-   Коммиты делает только главная сессия (и координатор — журнал и ветки); исполнитель сам не коммитит (правила — `.claude/dpcli-workflow.md`).
+   Исполнитель коммитит свои файлы в ветке задачи (`git commit -- <пути>`); слияния веток — координатор и главная сессия (правила — `.claude/dpcli-workflow.md`).
 5. Координатор принимает: `.dpcli/dpcli accept PY-1 -j 4`. FAIL — на доработку; PASS у типа с `dpcli_review: true` — состояние `checked` (ждёт ревью, `--no-review` — сразу принято), без ревью — `accepted`.
 6. Ревью (свежий `dp-reviewer`): `.dpcli/dpcli review PY-1 --verdict rework --from - < review.json`; координатор смотрит `review PY-1 --show` и решает: `event PY-1 accepted --note "по ревью"` или доработка.
 7. Слияние: ветка задачи → ветка модуля (в копии модуля), `.dpcli/dpcli event PY-1 merged --commit <хэш>`; свежее из основной ветки — `.dpcli/dpcli sync payments`; готовый модуль в основную: `.dpcli/dpcli merge feature/payments`.
@@ -120,14 +143,18 @@ ID задачи: `<КОД>-[этап]<n>[буква]` (`PY-7`, `PY-7a`, `PY-P8`)
 ```
 .dpcli/dpcli task new <модуль> [ID] --type T --title "…" --goal "…" [--plan-ref "§1"] \
     [--stage P] [--copy К] [--branch Б] [--contract ИМЯ@ВЕРСИЯ] [--scope ПУТЬ] [--dont-touch ПУТЬ] \
-    [--test ФИЛЬТР] [--check ИМЯ CMD EXPECT] [--from card.json|-] [--force]
+    [--test ФИЛЬТР] [--check ИМЯ CMD EXPECT] [--from card.json|-] [--no-copy] [--force]
 .dpcli/dpcli task show <ID> [--json] [--full] [--diff]
+.dpcli/dpcli task brief <ID> [--review]   # готовое сообщение исполнителю (ревьюеру) — отправлять как есть
+.dpcli/dpcli agents                       # реестр агентов: имя, роль, review, источник (dpcli|project|config), модель
 .dpcli/dpcli task set <ID> поле=знач поле+=элем поле-=элем [--check ИМЯ CMD EXPECT] [--test Ф] [--drop-check ИМЯ] [--contract ИМЯ@ВЕРСИЯ]
 .dpcli/dpcli task note <ID> "правило или заметка"   # дополнение к выданной задаче (видно в task show и inbox <ID>)
 .dpcli/dpcli task sync <ID> [--message М] [--trailer Т]   # влить ветку модуля в ветку задачи в её копии
 ```
 
 Карточка (`<plan_dir>/<модуль>/tasks/<ID>.json`) — обычный JSON: `id, module, type, title, goal, plan_ref, contracts[], copy, branch, base, scope[], dont_touch[], accept[], report_extra[], notes`; можно править руками. `task set` порядок: сначала `--drop-check`, потом `--check`/`--test` (замена проверки одним вызовом); значение — JSON или строка, для списочных полей строка — список через запятую.
+
+`task brief` отказывает (код 1, список недостающего), если у карточки нет `goal`, `scope` или ни одной проверки — карточка не готова к выдаче; `task new` при таких пропусках предупреждает. `EXPECT` проверок разбирается сразу в `task new`/`task set` (неверный — отказ).
 
 Проверка приёмки — `{name, cmd, expect, cwd?, timeout?}` или `{name, tests: "<фильтр>"}` (команда из `checks.tests`). `EXPECT`:
 
@@ -163,6 +190,8 @@ ID задачи: `<КОД>-[этап]<n>[буква]` (`PY-7`, `PY-7a`, `PY-P8`)
 ```
 
 `accept` печатает таблицу `PASS/FAIL имя значение`, у FAIL — путь к логу (`checks.log_dir/<ID>/`). Всё PASS → событие `accepted`, иначе `checked` с итогом. У типов с `dpcli_review: true` PASS → `checked` (ждёт ревью; `--no-review` — сразу `accepted`; `--here` после слияния ревью не ждёт). `--dry` — пробный прогон без события; `--only` — одна проверка (в конце сводка по всем); `--bg` — через `job` (долгие проверки), ждать: `.dpcli/dpcli job wait dp-accept-<ID> <сек>`.
+
+Строка `scope` в таблице — детерминированная проверка границ: файлы, изменённые в ветке задачи относительно `base` (`git diff --name-only base...HEAD` + незакоммиченные), должны попадать в `scope` и не попадать в `dont_touch` (пункт — glob или файл/префикс каталога; берётся первое слово пункта). Нарушение — FAIL со списком файлов (до 10). Пустой `scope` или копия не на ветке задачи — `SKIP`. Журнал модуля (`<plan_dir>/<модуль>/`, вкл. отчёт), `checks.log_dir` и `gc.ignore_*` нарушением не считаются.
 
 Отчёт (`report --template`): `status` (done|partial|blocked|failed), `summary`, `commits[]`, `checks[{name, value, pass}]`, `not_done[]`, `questions[]`, `images[]`, `how_to_check`, `uncertain`, `dp_feedback`, плюс ключи `report_extra` карточки. Неверный отчёт не сохраняется, ошибка говорит, что не так.
 

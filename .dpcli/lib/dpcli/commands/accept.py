@@ -1,5 +1,6 @@
 """accept: прогон проверок карточки (в т.ч. в фоне через job)."""
 import concurrent.futures as cf
+import fnmatch
 import os
 import re
 import subprocess
@@ -147,6 +148,70 @@ def run_check(c, cwd, logdir, idx, tid):
     return name, ok, val, str(log), dur
 
 
+def _pat(entry):
+    """Путь/glob из пункта scope: первое слово («src/x.py — функция f» → src/x.py)."""
+    w = str(entry).strip().split()
+    return w[0].strip("`'\"") if w else ""
+
+
+def path_in(path, pats):
+    """Путь попадает в один из шаблонов: glob (* ? [, ** — любые каталоги) или файл/префикс каталога."""
+    for pat in pats:
+        if not pat:
+            continue
+        if any(ch in pat for ch in "*?["):
+            if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(path, pat.replace("**/", "")):
+                return True
+        else:
+            p = pat.rstrip("/").removeprefix("./")
+            if path == p or path.startswith(p + "/"):
+                return True
+    return False
+
+
+def changed_files(cwd, base):
+    """Изменённые в ветке относительно base (base...HEAD) + незакоммиченные (вкл. неотслеживаемые)."""
+    r = gitx.gitr("-c", "core.quotepath=off", "diff", "--name-only", f"{base}...HEAD", cwd=cwd)
+    if r.returncode:
+        raise DpError(f"git diff {base}...HEAD: {gitx.gerr(r)}")
+    files = set(r.stdout.split("\n"))
+    st = gitx.gitr("-c", "core.quotepath=off", "status", "--porcelain", "--untracked-files=all", cwd=cwd).stdout
+    for ln in st.splitlines():
+        files.add(ln[3:].split(" -> ")[-1].strip('"'))
+    return sorted(f for f in files if f)
+
+
+def scope_check(card, cwd, mod):
+    """(ok | None — пропущено, значение): изменённые файлы ветки задачи ⊂ scope и ∩ dont_touch = ∅."""
+    scope = [_pat(x) for x in card.get("scope") or []]
+    if not any(scope):
+        return None, "пропущено: пустой scope"
+    br, base = card.get("branch"), card.get("base") or config.module_branch(mod)
+    cur = gitx.git("branch", "--show-current", cwd=cwd)
+    if br and cur != br:
+        return None, f"пропущено: {rel(cwd)} не на ветке задачи {br}"
+    try:
+        files = changed_files(cwd, base)
+    except DpError as e:
+        return False, str(e)
+    skip = [f"{config.plan_dir()}/{mod}/", str(config.get("checks.log_dir") or "build/dpcli")]
+    skip += [str(d) for d in config.get("gc.ignore_dirs") or []]
+    globs = [str(g) for g in config.get("gc.ignore_globs") or []]
+    files = [f for f in files if not path_in(f, skip) and not any(fnmatch.fnmatch(f.rsplit("/", 1)[-1], g) for g in globs)
+             and not any(f"/{d}/" in f"/{f}" for d in config.get("gc.ignore_dirs") or [])]
+    dont = [_pat(x) for x in card.get("dont_touch") or []]
+    out = [f for f in files if not path_in(f, scope)]
+    bad = [f for f in files if path_in(f, dont)]
+    if not out and not bad:
+        return True, f"{len(files)} файл(ов) в границах"
+    parts = []
+    if out:
+        parts.append("вне scope: " + ", ".join(out[:10]) + (f" … (+{len(out) - 10})" if len(out) > 10 else ""))
+    if bad:
+        parts.append("в dont_touch: " + ", ".join(bad[:10]) + (f" … (+{len(bad) - 10})" if len(bad) > 10 else ""))
+    return False, "; ".join(parts)
+
+
 def accept_bg(a, cwd, logdir):
     """Фоновый прогон (долгие проверки) через job; результат — accept тем же процессом, событие пишет он."""
     skip = {"--bg"}
@@ -193,12 +258,15 @@ def cmd_accept(a):
             print(f"{'PASS' if r[1] else 'FAIL'} {nm} {r[4]:.0f} с", file=sys.stderr, flush=True)
             return r
         res = list(ex.map(one, enumerate(checks, 1)))
-    w = max(len(r[0]) for r in res)
+    sc_ok, sc_val = scope_check(card, cwd, mod)
+    w = max(len(r[0]) for r in res + [("scope",)])
     for name, ok, val, log, dur in res:
         print(f"{'PASS' if ok else 'FAIL'} {name:<{w}} {val}" + (f"  [{rel(log)}]" if log and (not ok or a.full) else ""))
+    print(f"{'SKIP' if sc_ok is None else 'PASS' if sc_ok else 'FAIL'} {'scope':<{w}} {sc_val}")
     npass = sum(r[1] for r in res)
-    allok = npass == len(res)
-    print(f"{a.id}: {npass}/{len(res)} в {rel(cwd)}" + ("" if allok else "; логи " + rel(logdir)))
+    allok = npass == len(res) and sc_ok is not False
+    print(f"{a.id}: {npass}/{len(res)}{'' if sc_ok is not False else ' + FAIL scope'} в {rel(cwd)}"
+          + ("" if allok else "; логи " + rel(logdir)))
     # сводка по всем проверкам карточки: последний результат каждой (для текущего HEAD копии)
     head = gitx.gitr("rev-parse", "--short", "HEAD", cwd=cwd).stdout.strip()
     resf = logdir / "results.json"
@@ -215,12 +283,14 @@ def cmd_accept(a):
         print(f"Сводно по карточке ({head}): {n_ok}/{len(allnames)} PASS" + (f"; нет: {', '.join(gaps)}" if gaps else ""))
     if not a.dry:
         summ = "; ".join(f"{n}={'ok' if cur[n]['ok'] else 'FAIL'}:{short(cur[n]['val'], 30)}" for n in cur)
+        if sc_ok is False:
+            summ += f"; scope=FAIL:{short(sc_val, 60)}"
         full_set = n_ok == len(allnames)
         need_rev = agents.needs_review(card.get("type")) and not a.here and not a.no_review
         kind = "accepted" if allok and full_set and not a.no_accept and not need_rev else "checked"
         add_event(home, a.id, kind, by_default(a), note=f"{n_ok}/{len(allnames)} {summ}", commits=a.commit)
         if allok and full_set and need_rev:
-            print(f"{a.id}: PASS → ревью: {agents.reviewer_name()} (задание: «Ревью задачи {a.id}»), вердикт — {CLI} review {a.id}")
+            print(f"{a.id}: PASS → ревью: {agents.reviewer_name()} (задание: {CLI} task brief {a.id} --review), вердикт — {CLI} review {a.id}")
     sys.exit(0 if allok else 1)
 
 

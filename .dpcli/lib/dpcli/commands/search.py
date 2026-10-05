@@ -26,6 +26,8 @@ def cmd_search(a):
     def scan(mod, tid, typ, t, text, src=None, unparsed=None):
         text = " ".join(str(text).split())
         m = rx.search(text)
+        if not m and tid and rx.search(str(tid)):  # поиск по ID задачи
+            m = re.match("", text)
         if m:
             lo, hi = max(0, m.start() - 70), min(len(text), m.end() + 90)
             frag = ("…" if lo else "") + text[lo:hi] + ("…" if hi < len(text) else "")

@@ -7,7 +7,7 @@ from . import VERSION
 from .reexec import maybe_reexec
 from .util import CLI, DpError, Parser, die
 
-COMMANDS = ["task", "journal_cmds", "accept", "report", "status", "plan", "branches", "search", "jobs"]
+COMMANDS = ["task", "roles", "journal_cmds", "accept", "report", "status", "plan", "branches", "search", "jobs"]
 OPTIONAL = ["init", "docs"]  # появляются отдельно; нет модуля — команды нет
 
 

@@ -5,7 +5,9 @@
 строки .gitignore; создаёт dpcli.yml из примера, если конфига нет. Плейсхолдеры {{cli}} {{workflow}} {{plan_dir}}
 {{contracts_dir}} {{main_branch}} {{module_branch}} {{project}} подставляются из конфига.
 Ручные правки сгенерированных файлов видны по манифесту .claude/.dpcli-manifest.json (sha256 записанного) —
-без --force такие файлы не перезаписываются и не удаляются.
+без --force такие файлы не перезаписываются и не удаляются. Файлы, которых нет в манифесте (агенты, скиллы, процесс
+проекта с теми же именами), init не трогает никогда, даже с --force: агент dpcli пропускается, роль своего агента —
+ключ roles в конфиге.
 """
 import hashlib
 import json
@@ -174,10 +176,18 @@ class Init:
             self.warn.append(f"{MANIFEST}: не разобран — считаю пустым")
             old = {}
         new = {}
+        foreign = self.foreign_groups(plan, old)
+        shown = set()
         for dest, data, src, src_rel in plan:
             p = self.root / dest
             h = sha(data)
             cur = p.read_bytes() if p.is_file() else None
+            g = self.group(dest)
+            if g in foreign:  # файл/скилл проекта (не создан init): не трогаем никогда, даже с --force
+                if g not in shown:
+                    shown.add(g)
+                    self.row(g, "пропущен", foreign[g])
+                continue
             if cur is None:
                 st, write = "создан", True
             elif cur == data:
@@ -213,6 +223,34 @@ class Init:
         if not self.dry and new != old:
             mp.parent.mkdir(parents=True, exist_ok=True)
             mp.write_text(json.dumps({"files": dict(sorted(new.items()))}, ensure_ascii=False, indent=2) + "\n")
+
+    @staticmethod
+    def group(dest):
+        """Единица владения: скилл — каталог .claude/skills/<имя>/, остальное — файл."""
+        parts = dest.split("/")
+        if parts[:2] == [".claude", "skills"] and len(parts) > 3:
+            return "/".join(parts[:3]) + "/"
+        return dest
+
+    def foreign_groups(self, plan, old):
+        """{группа: примечание} — уже есть в проекте, не в манифесте init и отличается от того, что init записал бы."""
+        want = {d: data for d, data, *_ in plan}
+        out = {}
+        for dest in want:
+            g = self.group(dest)
+            if g in out:
+                continue
+            if g.endswith("/"):
+                d = self.root / g
+                files = [f for f in d.rglob("*") if f.is_file()] if d.is_dir() else []
+                if any(relp(f, self.root) not in old and want.get(relp(f, self.root)) != f.read_bytes() for f in files):
+                    out[g] = "скилл проекта (не создан init) — не трогаю"
+                continue
+            p = self.root / dest
+            if p.is_file() and dest not in old and p.read_bytes() != want[dest]:
+                out[g] = ("агент проекта; роль: см. roles в конфиге" if dest.startswith(".claude/agents/")
+                          else "файл проекта (не создан init) — не трогаю")
+        return out
 
     # ---------- слияние с чужими файлами ----------
     def put_text(self, rel, old, new, note=""):
@@ -316,7 +354,7 @@ def cmd_init(a):
 def register(sp):
     q = sp.add_parser("init", help="настроить Claude Code в проекте: агенты, скиллы, процесс, CLAUDE.md, разрешения (идемпотентно)")
     q.add_argument("--dry-run", action="store_true", help="ничего не писать, только показать таблицу действий")
-    q.add_argument("--force", action="store_true", help="перезаписать/удалить и вручную изменённые сгенерированные файлы")
+    q.add_argument("--force", action="store_true", help="перезаписать/удалить и вручную изменённые файлы из манифеста init (файлы проекта — никогда)")
     q.add_argument("--check", action="store_true", help="только проверить, что .claude актуален (код 1 — нужен init; для CI)")
     g = q.add_mutually_exclusive_group()
     g.add_argument("--yaml", action="store_true", help="создать конфиг dpcli.yml из примера (по умолчанию)")

@@ -205,9 +205,13 @@ def cmd_check(x, a):
             err.append(f"{r}: нет frontmatter")
             continue
         t, s = fm.get("type"), fm.get("status")
-        if t not in types:
+        if t is None:
+            err.append(f"{r}: нет type (одно из {sorted(types)})")
+        elif t not in types:
             err.append(f"{r}: type '{t}' не из {sorted(types)}")
-        if s not in statuses:
+        if s is None:
+            err.append(f"{r}: нет status (одно из {sorted(statuses)})")
+        elif s not in statuses:
             err.append(f"{r}: status '{s}' не из {sorted(statuses)}")
         if not str(fm.get("summary", "")).strip():
             err.append(f"{r}: пустой summary")
@@ -415,6 +419,13 @@ def write_gen(x, path, title, summary, body, head=GEN_HEAD):
 def cmd_index(x, a):
     x.need_docs()
     dd, c = x.c["docs_dir"], x.c
+    fp = x.root / x.reg / "findings.md"
+    if not fp.exists():  # INDEX.md ссылается на реестр выводов — заготовка (дальше пишется вручную)
+        fm = {"type": "registry", "status": "active", "module": "", "updated": datetime.date.today().isoformat(),
+              "summary": "Реестр выводов: что мы знаем, по модулям (пишется вручную).", "related": []}
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(dump_fm(fm) + "\n# Реестр выводов\n\nПо модулю — раздел `## <модуль>`, вывод — пункт `- …` "
+                      "(со ссылкой на источник). Поиск — `docs findings`.\n", encoding="utf-8")
     items = [(r, fm, body) for r, fm, body in docs_all(x) if fm is not None]
     sections = [
         ("Описания систем (guide)", lambda r: _under(r, f"{dd}/guide")),

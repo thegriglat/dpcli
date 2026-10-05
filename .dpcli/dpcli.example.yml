@@ -80,6 +80,13 @@ jobs:
 # Источник определений агентов (dpcli init рендерит их в .claude/agents/).
 agents_dir: .dpcli/agents
 
+# Роли своих агентов проекта (.claude/agents/*.md) — подключить их к dpcli, не меняя их файлы.
+# role: coordinator | executor | reviewer | status; review: нужен ли ревьюер после PASS (для executor).
+# Перекрывает dpcli_role/dpcli_review из frontmatter. Список с источниками — dpcli agents.
+# roles:
+#   backend-dev: {role: executor, review: true}
+#   code-reviewer: {role: reviewer}
+
 # Путь к описанию процесса (ссылки в dpcli task show и текстах агентов).
 workflow: .claude/dpcli-workflow.md
 

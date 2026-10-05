@@ -23,8 +23,8 @@ class Flow(unittest.TestCase):
     def mk_task(self, typ, *extra):
         out = self.p.ok("task", "new", "demo", "--type", typ, "--title", f"Задача {typ}", "--goal", "цель", *extra)
         tid = out.split(":")[0]
-        tc = self.p.copies / f"proj-demo-{tid}"
-        git("worktree", "add", "-q", "-b", f"demo/{tid}", str(tc), "feature/demo", cwd=self.mc)
+        tc = self.p.copies / f"proj-demo-{tid}"  # копию и ветку задачи создаёт task new
+        self.assertEqual(git("rev-parse", "--abbrev-ref", "HEAD", cwd=tc), f"demo/{tid}")
         (tc / f"{tid}.txt").write_text("x", encoding="utf-8")
         self.p.commit_all(f"работа {tid}", cwd=tc)
         return tid, tc
@@ -39,7 +39,7 @@ class Flow(unittest.TestCase):
         self.assertEqual(p.run("module", "new", "demo", "--code", "DM")[0], 1)  # повтор — ошибка
 
         # task new с проверками (engineer: review=true; writer: нет)
-        eng, eng_c = self.mk_task("dp-engineer", "--scope", "x.txt", "--check", "echo", "echo hi", "re:hi",
+        eng, eng_c = self.mk_task("dp-engineer", "--scope", "*.txt", "--check", "echo", "echo hi", "re:hi",
                                   "--check", "bad", "false", "exit=0")
         wri, wri_c = self.mk_task("dp-writer", "--check", "ok", "true", "exit=0")
         self.assertEqual((eng, wri), ("DM-1", "DM-2"))
@@ -115,9 +115,7 @@ class Flow(unittest.TestCase):
         # журнал остался в main
         self.assertIn(eng, p.ok("log", "demo"))
 
-    # БАГ: `search DM-1` (по ID задачи) ничего не находит, хотя ID есть в карточке и событиях;
-    # находит только по словам из title/goal.
-    @unittest.expectedFailure
+    # было: `search AA-1` (по ID задачи) ничего не находил
     def test_search_by_id(self):
         p = Project()
         self.addCleanup(p.cleanup)
@@ -171,15 +169,20 @@ class AcceptExpect(unittest.TestCase):
         p.ok("task", "set", "AA-1", "--check", "numbad", "echo score 2", "num:score ([\\d.]+) >=5")
         self.assertEqual(p.run("accept", "AA-1")[0], 1)
 
-    # БАГ (мелкий): `task new --check x true garbage` принимает непонятный expect («garbage»), ошибка вылезает
-    # только при accept; ожидание — отказ уже в task new / task set.
-    @unittest.expectedFailure
+    # непонятный expect — отказ уже в task new / task set, а не в accept
     def test_bad_expect_rejected_early(self):
         p = Project()
         self.addCleanup(p.cleanup)
         p.ok("module", "new", "aa", "--code", "AA")
-        code, _, _ = p.run("task", "new", "aa", "--type", "dp-writer", "--check", "x", "true", "garbage")
+        code, _, err = p.run("task", "new", "aa", "--type", "dp-writer", "--check", "x", "true", "garbage")
         self.assertNotEqual(code, 0)
+        self.assertIn("garbage", err)
+        self.assertFalse(list((p.copies / "proj-aa" / "docs" / "plan" / "aa" / "tasks").glob("*.json")))
+        p.ok("task", "new", "aa", "--type", "dp-writer", "--check", "x", "true", "exit=0")
+        self.assertNotEqual(p.run("task", "set", "AA-1", "--check", "y", "true", "num:x")[0], 0)
+        self.assertNotEqual(p.run("task", "set", "AA-1", "--check", "y", "true", "re:(")[0], 0)
+        self.assertIn('"x"', p.ok("task", "show", "AA-1", "--json"))
+        self.assertNotIn('"y"', p.ok("task", "show", "AA-1", "--json"))
 
     def test_tests_check_needs_template(self):
         p = Project({"checks": {"tests": "echo running {filter}"}})
