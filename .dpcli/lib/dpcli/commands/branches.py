@@ -68,7 +68,8 @@ def cmd_merge(a):
             raise DpError(f"{out}; push не удался: {gitx.gerr(r)}")
         out += "; pushed"
     if into == config.main_branch() and kind != "up-to-date" and not a.no_index:
-        out += "; " + sem_index_bg()
+        msg = sem_index_bg()
+        out += f"; {msg}" if msg else ""
     print(out)
 
 

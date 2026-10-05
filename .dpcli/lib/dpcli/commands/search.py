@@ -154,6 +154,16 @@ def sem_dir():
     return config.expand(config.get("sem.cache_dir", "~/.cache/dpcli/{project}")) / "sem"
 
 
+def sem_enabled():
+    return bool(config.get("sem.enabled", False))
+
+
+def require_sem():
+    if not sem_enabled():
+        raise DpError("смысловой поиск выключен: sem.enabled: true в конфиге и Ollama с моделью "
+                      f"(ollama pull {sem_model()}); обычный поиск — {CLI} search без --sem")
+
+
 def ollama_embed(texts):
     import urllib.request
     body = json.dumps({"model": sem_model(), "input": texts, "truncate": True, "keep_alive": "2m"}
@@ -237,6 +247,8 @@ def sem_sync(quiet=False):
 def sem_index_bg():
     """После слияния в главную ветку: index отвязанным процессом (лог index.log); без Ollama — предупреждение."""
     import urllib.request
+    if not sem_enabled():
+        return ""
     try:
         urllib.request.urlopen(sem_url("/api/tags"), timeout=2).read()
     except Exception:
@@ -250,6 +262,7 @@ def sem_index_bg():
 
 
 def cmd_index(a):
+    require_sem()
     t0 = time.time()
     if a.full:
         for n in ("emb.f16", "meta.jsonl", "info.json"):
@@ -262,6 +275,7 @@ def cmd_index(a):
 def sem_search(a):
     import operator
     import struct
+    require_sem()
     t0 = time.time()
     meta, rows, n, _, _, dim = sem_sync(quiet=True)
     q = sem_norm(ollama_embed([a.pattern])[0])
@@ -287,7 +301,7 @@ def sem_search(a):
 def register(sp):
     q = sp.add_parser("search", help="поиск по карточкам, отчётам, событиям, решениям всех модулей (прошлые работы)")
     q.add_argument("pattern", metavar="текст|regex"); q.add_argument("--module"); q.add_argument("--max", type=int, default=None)
-    q.add_argument("--sem", action="store_true", help=f"по смыслу (sem.model через Ollama; нужен {CLI} index); --max по умолчанию 10")
+    q.add_argument("--sem", action="store_true", help=f"по смыслу (опционально: sem.enabled, Ollama; нужен {CLI} index); --max по умолчанию 10")
     q.add_argument("--path", help="с --sem: префикс пути")
     q.add_argument("--all", action="store_true", help="с --sem: и <docs_dir>/archive/**, и документы status: superseded|closed")
     q.set_defaults(func=cmd_search)
