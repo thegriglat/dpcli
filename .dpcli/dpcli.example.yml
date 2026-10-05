@@ -1,0 +1,77 @@
+# Конфиг dpcli. Кладётся в корень проекта как dpcli.yml (или dpcli.json; json приоритетнее).
+# Ищется вверх от текущего каталога до корня git. Все ключи необязательны — ниже умолчания.
+# Подстановки в шаблонах путей и веток: {project}, {module}, {task}, {copies}.
+
+# Имя проекта (по умолчанию — имя каталога главного worktree).
+# project: myproject
+
+# Основная ветка, куда вливаются модули.
+main_branch: main
+# Ветка модуля.
+module_branch: "feature/{module}"
+# Ветка задачи (от ветки модуля).
+task_branch: "{module}/{task}"
+
+# Каталог, где создаются рабочие копии (git worktree).
+copies_dir: "~"
+# Рабочая копия модуля.
+module_copy: "{copies}/{project}-{module}"
+# Рабочая копия задачи.
+task_copy: "{copies}/{project}-{module}-{task}"
+
+# Журналы и планы модулей: <plan_dir>/<модуль>/ (карточки, отчёты, events.jsonl, decisions.jsonl).
+plan_dir: docs/plan
+# Контракты стыков: <contracts_dir>/<модуль>.md.
+contracts_dir: docs/contracts
+# Каталог документации (INDEX.md, registry/, frontmatter-проверки dpcli docs).
+docs_dir: docs
+
+# Проверки приёмки (dpcli accept).
+checks:
+  # Доп. переменные окружения для команд проверок (по умолчанию нет); {tmpdir} — свежий временный каталог.
+  # env:
+  #   HOME_FOR_TESTS: "{tmpdir}"
+  # Шаблон команды для проверок вида {tests: …}; {filter} — фильтр тестов из карточки.
+  # Не задан — проверка tests недоступна. Пример: "python3 -m pytest -q -k {filter}"
+  # tests: "python3 -m pytest -q -k {filter}"
+  # Куда пишутся логи проверок: <log_dir>/<ID>/.
+  log_dir: build/dpcli
+
+# Куда агенты кладут скриншоты и картинки (подсказка в шаблоне отчёта); по подпапке на задачу.
+artifacts_dir: build/artifacts
+
+# Зарезервированные коды модулей (не выдаются в module new / task new).
+reserved_codes: []
+
+# dpcli gc: что не считать «незакоммиченными изменениями» в копиях при удалении.
+gc:
+  ignore_dirs: [build, __pycache__]
+  # Шаблоны имён файлов, напр. ["*.uid"].
+  ignore_globs: []
+
+# Смысловой поиск (dpcli index / dpcli search --sem) через Ollama.
+sem:
+  model: bge-m3
+  url: "http://localhost:11434"
+  cache_dir: "~/.cache/dpcli/{project}"
+  # Корпус индекса — шаблоны путей от корня проекта.
+  globs:
+    - "docs/**/*.md"
+    - "CHANGELOG.md"
+
+# Долгие запуски (dpcli job).
+jobs:
+  dir: "~/.cache/dpcli/{project}/jobs"
+  # Сессия tmux для окон задач (переменная DPCLI_TMUX_SESSION переопределяет).
+  tmux_session: dp
+  # Слотов в замке cpu (по умолчанию — половина логических ядер; DPCLI_CPU_SLOTS переопределяет).
+  # cpu_slots: 8
+
+# Каталог замков dpcli lock cpu|gpu (по умолчанию — <jobs.dir>/locks).
+# locks: "~/.cache/dpcli/{project}/locks"
+
+# Источник определений агентов (dpcli init рендерит их в .claude/agents/).
+agents_dir: .dpcli/agents
+
+# Путь к описанию процесса (ссылки в dpcli task show и текстах агентов).
+workflow: .claude/dpcli-workflow.md
