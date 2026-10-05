@@ -77,8 +77,15 @@
 - [x] 0. Исследовать исходники, составить план, `git init`
 - [x] 1a. Ядро: config/yamlmini/util/gitx/journal/agents/reexec + разрезание всех команд по `commands/*`, точка входа (агент «core»)
 - [x] 1b. Шаблоны: generic агенты, скилл start-to-do, workflow.md, блок CLAUDE.md, dpcli.example.yml (агент «templates»)
-- [ ] 2a. `dpcli init` + интеграция ролей агентов (agents.py ↔ task/report/accept)
+- [x] 2a. `dpcli init` + интеграция ролей агентов (agents.py ↔ task/report/accept)
 - [x] 2b. `dpcli docs` (порт dp_docs.py, конфигурируемый)
-- [ ] 2c. Тесты (unittest, временный git-репозиторий): полный цикл module new → task new → report → accept → review → merge → gc
-- [ ] 3. README (справка, бывш. dp.md), сквозная проверка: копия `.dpcli` в пустой проект → init → цикл
-- [ ] 4. Ревью кода, грep на остатки deltaplan/godot/greg, финальный коммит
+- [x] 2c. Тесты (unittest, временный git-репозиторий): полный цикл module new → task new → report → accept → review → merge → gc
+- [x] 3. README (справка, бывш. dp.md), сквозная проверка: копия `.dpcli` в пустой проект → init → цикл
+- [x] 4. Ревью кода, грep на остатки deltaplan/godot/greg, финальный коммит
+
+## Волны 3–4 (по уточнениям пользователя)
+- [x] sem (Ollama/bge-m3) опционален: `sem.enabled`, по умолчанию выключен
+- [x] init не трогает агентов/скиллы/файлы проекта; роли своим агентам — `roles` в конфиге; `dpcli agents`
+- [x] Протокол сообщений: `task brief [--review]`, однострочные ответы; инструкции агентов сжаты в 2–3 раза
+- [x] Границы задачи: `task new` создаёт копию/ветку, `brief` отказывает без goal/scope/проверок, `accept` проверяет scope
+- [x] Документация для агентов: `docs section`, лимит размера — ошибка, summary ≤140, компактный INDEX, реестр решений по запросу

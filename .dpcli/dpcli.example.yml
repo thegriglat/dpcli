@@ -100,5 +100,12 @@ docs:
   # Допустимые значения type и status во frontmatter.
   types: [guide, plan, contract, research, reference, journal, registry]
   statuses: [active, idea, postponed, closed, superseded]
-  # Предупреждение, если файл больше этого размера (КБ).
+  # Лимит размера документа (КБ); архив и generated-файлы не проверяются.
   max_kb: 40
+  # error — превышение лимита ошибка docs check (код 1); warn — только предупреждение.
+  max_kb_mode: error
+  # Максимальная длина summary (символов, одна строка: вывод/назначение документа).
+  summary_max: 140
+  # Реестры, которые собирает docs index: research, contracts, decisions
+  # (decisions дублирует журналы модулей — включать явно; решения ищутся dpcli search).
+  registries: [research, contracts]

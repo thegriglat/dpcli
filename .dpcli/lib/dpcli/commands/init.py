@@ -3,7 +3,7 @@
 Рендерит агентов (<agents_dir>/*.md → .claude/agents/<name>.md), скиллы (.dpcli/skills/** → .claude/skills/**),
 процесс (templates/workflow.md → <workflow>), блок CLAUDE.md между маркерами, разрешение в .claude/settings.json,
 строки .gitignore; создаёт dpcli.yml из примера, если конфига нет. Плейсхолдеры {{cli}} {{workflow}} {{plan_dir}}
-{{contracts_dir}} {{main_branch}} {{module_branch}} {{project}} подставляются из конфига.
+{{contracts_dir}} {{docs_dir}} {{main_branch}} {{module_branch}} {{project}} подставляются из конфига.
 Ручные правки сгенерированных файлов видны по манифесту .claude/.dpcli-manifest.json (sha256 записанного) —
 без --force такие файлы не перезаписываются и не удаляются. Файлы, которых нет в манифесте (агенты, скиллы, процесс
 проекта с теми же именами), init не трогает никогда, даже с --force: агент dpcli пропускается, роль своего агента —
@@ -87,6 +87,7 @@ class Init:
             "workflow": str(config.get("workflow")),
             "plan_dir": config.plan_dir(),
             "contracts_dir": config.contracts_dir(),
+            "docs_dir": config.docs_dir(),
             "main_branch": config.main_branch(),
             "module_branch": config.subst(config.get("module_branch"), module="<модуль>"),
             "project": config.project(),

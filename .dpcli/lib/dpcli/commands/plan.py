@@ -1,28 +1,15 @@
 """plan (оглавление/раздел), plan edit, render (md-журнал модуля)."""
-import re
 import sys
 from pathlib import Path
 
 from .. import config, gitx
 from ..journal import (add_event, all_modules, by_default, home_root, module_home, module_meta, task_cards,
                        task_states)
+from ..mdsec import find_section, section_body, section_end, toc
+from ..mdsec import headings as plan_headings
 from ..util import CLI, DpError, read_json, read_jsonl, rel, short
 
 DEFAULT_SECTION = "Решения пользователя"
-HEAD_RE = re.compile(r"^(#{1,6})\s+(.*)$")
-
-
-def plan_headings(text):
-    out, fence = [], False
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if line.startswith("```"):
-            fence = not fence
-        if not fence:
-            m = HEAD_RE.match(line)
-            if m:
-                out.append((i, len(m[1]), m[2].strip()))
-    return lines, out
 
 
 def plan_path(target, contracts=False):
@@ -38,36 +25,6 @@ def plan_path(target, contracts=False):
     return root / f if (root / f).exists() else gitx.toplevel() / f
 
 
-def find_section(heads, q):
-    """Индекс заголовка по номеру из оглавления или началу/вхождению текста; None, если нет."""
-    q = q.strip()
-    if q.isdigit() and 1 <= int(q) <= len(heads):
-        return int(q) - 1
-    ql = q.lower().lstrip("§").strip()
-    for pref in (True, False):
-        for n, (_, _, t) in enumerate(heads):
-            tl = t.lower().replace("§", "").strip()
-            if (tl.startswith(ql) if pref else ql in tl):
-                return n
-    return None
-
-
-def section_end(lines, heads, sel):
-    i, lvl, _ = heads[sel]
-    for j, l2, _ in heads[sel + 1:]:
-        if l2 <= lvl:
-            return j
-    return len(lines)
-
-
-def _sec_len(lines, heads, n):
-    i, lvl, _ = heads[n]
-    for j, l2, _ in heads[n + 1:]:
-        if l2 <= lvl:
-            return j - i
-    return len(lines) - i
-
-
 def cmd_plan(a):
     if a.target == "edit":
         if not a.section or not a.extra:
@@ -80,20 +37,13 @@ def cmd_plan(a):
     lines, heads = plan_headings(path.read_text())
     if not a.section:
         print(f"{rel(path)} — {len(lines)} строк; {CLI} plan {a.target} <номер|текст>")
-        for n, (i, lvl, t) in enumerate(heads, 1):
-            if lvl <= a.depth:
-                print(f"{n:>3} {'  ' * (lvl - 1)}{short(t, 90)}  ({_sec_len(lines, heads, n - 1)})")
+        for t in toc(lines, heads, a.depth):
+            print(t)
         return
     sel = find_section(heads, a.section)
     if sel is None:
         raise DpError(f"раздел «{a.section.strip()}» не найден; оглавление — {CLI} plan {a.target}")
-    i = heads[sel][0]
-    body = lines[i:section_end(lines, heads, sel)]
-    while body and not body[-1].strip():
-        body.pop()
-    if a.max and len(body) > a.max:
-        body = body[: a.max] + [f"… ещё {len(body) - a.max} строк (--max 0 — всё)"]
-    print("\n".join(body))
+    print("\n".join(section_body(lines, heads, sel, a.max)))
 
 
 def plan_edit(target, section, contracts=False, append=None, replace=None, set_=None, create=False, all_=False):

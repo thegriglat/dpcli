@@ -52,7 +52,7 @@
 - `sem` (`enabled: false` по умолчанию, `model`, `url`, `cache_dir`, `globs`), `jobs` (`dir`, `tmux_session`, `cpu_slots`), `locks`;
 - `agents_dir` (`.dpcli/agents`), `workflow` (`.claude/dpcli-workflow.md`);
 - `roles` — роли своих агентов проекта: `{имя: {role: coordinator|executor|reviewer|status, review: bool}}`; реестр агентов = `agents_dir` + `.claude/agents` с `dpcli_role` во frontmatter + `roles` (перекрывает); смотреть — `dpcli agents`;
-- `docs` (`extra`, `exclude`, `types`, `statuses`, `max_kb`).
+- `docs` (`extra`, `exclude`, `types`, `statuses`, `max_kb`, `max_kb_mode`, `summary_max`, `registries`).
 
 ## Агенты
 
@@ -63,7 +63,7 @@
 
 Поставляются: `dp-coordinator` (opus), `dp-engineer`, `dp-researcher`, `dp-writer` (sonnet), `dp-mechanic` (haiku), `dp-reviewer` (opus), `dp-status` (haiku). Тексты агентов короткие; общие правила — только в описании процесса, агенты на него ссылаются.
 
-Плейсхолдеры `{{cli}}`, `{{workflow}}`, `{{plan_dir}}`, `{{contracts_dir}}`, `{{main_branch}}`, `{{module_branch}}`, `{{project}}` подставляет `init` и кладёт результат в `.claude/agents/`. Агентов проекта `init` не трогает: одноимённый файл в `.claude/agents/` пропускается.
+Плейсхолдеры `{{cli}}`, `{{workflow}}`, `{{plan_dir}}`, `{{contracts_dir}}`, `{{docs_dir}}`, `{{main_branch}}`, `{{module_branch}}`, `{{project}}` подставляет `init` и кладёт результат в `.claude/agents/`. Агентов проекта `init` не трогает: одноимённый файл в `.claude/agents/` пропускается.
 
 **Свои агенты в ролях процесса:** ключ `roles` в `dpcli.yml` (имя агента → `role`, `review`) или `dpcli_role`/`dpcli_review` во frontmatter. Тип исполнителя в `task new --type …` проверяется по этому реестру; посмотреть — `.dpcli/dpcli agents`.
 
@@ -223,15 +223,20 @@ ID задачи: `<КОД>-[этап]<n>[буква]` (`PY-7`, `PY-7a`, `PY-P8`)
 ### Документация
 
 ```
-.dpcli/dpcli docs check                                       # frontmatter, живые ссылки, размер
-.dpcli/dpcli docs index                                       # собрать INDEX.md и реестры
-.dpcli/dpcli docs find [--type T] [--status S] [--module М] [текст]
+.dpcli/dpcli docs check                                       # frontmatter, summary, живые ссылки, размер (код 1 при ошибках)
+.dpcli/dpcli docs index                                       # собрать INDEX.md и реестры (docs.registries)
+.dpcli/dpcli docs find [--type T] [--status S] [--module М] [--archive] [--long] [текст]   # строка «путь — summary»
+.dpcli/dpcli docs section <путь>[#раздел] [<номер|начало заголовка>] [--depth 3] [--max N]  # оглавление или раздел
 .dpcli/dpcli docs show <путь.md>                              # frontmatter + оглавление
 .dpcli/dpcli docs findings [--module М] [текст]               # выводы из registry/findings.md
-.dpcli/dpcli docs init [--dry] [--refresh-contracts]          # frontmatter файлам без него
+.dpcli/dpcli docs init [--dry] [--refresh-contracts]          # frontmatter файлам без него (summary: "TODO")
 ```
 
-Допустимые `type`/`status` и исключения задаются в разделе `docs` конфига.
+Документацию читают по кусочку: `INDEX.md` — точка входа (группы по типу, строка на документ `- [путь](путь) — summary [статус]`, архив — одной строкой), `docs find` — строка на документ, `docs section` — оглавление документа (без раздела) или текст раздела с подразделами, без frontmatter. Раздел — номер из оглавления или начало заголовка; если подходит несколько — список кандидатов и код 1 (`plan` разбирает разделы так же).
+
+Правила `docs check`: `summary` обязательна, одна строка ≤ `docs.summary_max` (140) символов, `TODO` — ошибка (`docs init` ставит `summary: "TODO"`, а не выдумывает из текста); документ больше `docs.max_kb` (40 КБ) — ошибка с подсказкой разбить на разделы-файлы или вынести данные (`docs.max_kb_mode: warn` — только предупреждение; архив и `generated: true` не проверяются). `docs find --status closed|superseded` и `--archive` ищут и в `{docs_dir}/archive/`.
+
+Реестры: `docs.registries` (по умолчанию `[research, contracts]`; `decisions` — только если включён явно, иначе решения ищутся `search`). `registry/findings.md` пишется вручную (`docs index` создаёт заготовку): раздел `## <модуль>`, вывод — пункт `- …` в одну строку с числами и ссылкой `путь#раздел`. Допустимые `type`/`status`, исключения и лимиты — раздел `docs` конфига.
 
 ### Долгие запуски и замки
 

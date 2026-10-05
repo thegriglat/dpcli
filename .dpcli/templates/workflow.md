@@ -84,9 +84,11 @@
 - Прошлые модули — `{{cli}} search <текст>` (`--sem` — по смыслу, если включён).
 
 ## Документация
-- Каталог `docs_dir`, вход — `INDEX.md`. «Что знаем про X» — `{{cli}} docs findings X`, `{{cli}} docs find …`.
-- Каждый md — с frontmatter (`type`, `status`, `module`, `updated`, `summary`, `related`); новый — `{{cli}} docs init`; перед коммитом — `{{cli}} docs check`.
-- Реестры — `{{cli}} docs index` (кроме `findings.md`).
+- Вход — `{{docs_dir}}/INDEX.md` (строка на документ). Найти — `{{cli}} docs find <слова>`, `{{cli}} docs findings <слова>`, журналы модулей — `{{cli}} search`.
+- Читать по разделам, не целиком: `{{cli}} docs section <путь>` — оглавление, `{{cli}} docs section <путь> <номер|начало заголовка>` — раздел.
+- Каждый md — с frontmatter (`type`, `status`, `module`, `updated`, `summary`, `related`); новый — `{{cli}} docs init`; `summary` — вывод/назначение в одну строку ≤ 140 символов (не TODO).
+- Размер документа ≤ `docs.max_kb` (40 КБ): больше — разбить на разделы-файлы или вынести данные; перед коммитом — `{{cli}} docs check`, реестры — `{{cli}} docs index`.
+- Закрытая работа — одна строка в `registry/findings.md` (раздел модуля): вывод с числами и ссылка `путь#раздел`.
 
 ## Агенты и модели
 | Тип | Модель | Для чего |
