@@ -1,4 +1,4 @@
-"""Общие помощники: ошибки, парсер аргументов, время, JSON/JSONL, короткое форматирование."""
+"""Common helpers: errors, argument parser, time, JSON/JSONL, compact formatting."""
 import argparse
 import datetime as dt
 import json
@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-CLI = ".dpcli/dpcli"  # как вызывать утилиту из корня рабочей копии (в подсказках агентам)
+CLI = ".dpcli/dpcli"  # how to invoke the tool from the working copy root (in hints to agents)
 
 
 class DpError(Exception):
@@ -24,7 +24,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def subgroup(sp, name, help):
-    """Общая группа подкоманд (`module new` и `module init` регистрируются из разных модулей)."""
+    """Shared subcommand group (`module new` and `module init` are registered from different modules)."""
     p = sp.choices.get(name)
     if p is None:
         p = sp.add_parser(name, help=help)
@@ -42,7 +42,7 @@ def read_json(p):
     except FileNotFoundError:
         return None
     except json.JSONDecodeError as e:
-        raise DpError(f"{p}: неверный JSON ({e})")
+        raise DpError(f"{p}: invalid JSON ({e})")
 
 
 def write_json(p, obj):
@@ -70,7 +70,7 @@ def read_jsonl(p):
                 try:
                     out.append(json.loads(line))
                 except json.JSONDecodeError:
-                    print(f"dpcli: {p}:{i}: пропущена неверная строка", file=sys.stderr)
+                    print(f"dpcli: {p}:{i}: skipped invalid line", file=sys.stderr)
     except FileNotFoundError:
         pass
     return out
@@ -94,10 +94,10 @@ def age(ts):
     except (TypeError, ValueError):
         return "?"
     if s < 3600:
-        return f"{int(s // 60)}м"
+        return f"{int(s // 60)}m"
     if s < 86400:
-        return f"{int(s // 3600)}ч"
-    return f"{int(s // 86400)}д"
+        return f"{int(s // 3600)}h"
+    return f"{int(s // 86400)}d"
 
 
 def short(s, n):

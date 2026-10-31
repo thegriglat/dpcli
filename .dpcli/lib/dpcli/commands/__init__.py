@@ -1,1 +1,1 @@
-"""Команды dpcli: каждый модуль экспортирует register(sp) — добавляет свои подпарсеры с set_defaults(func=...)."""
+"""dpcli commands: each module exports register(sp), which adds its subparsers with set_defaults(func=...)."""

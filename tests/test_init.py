@@ -6,7 +6,7 @@ from helpers import DIST, Project
 HAS_INIT = (DIST / "lib" / "dpcli" / "commands" / "init.py").is_file()
 
 
-@unittest.skipUnless(HAS_INIT, "commands/init.py ещё нет")
+@unittest.skipUnless(HAS_INIT, "commands/init.py not present yet")
 class Init(unittest.TestCase):
     def setUp(self):
         self.p = Project()
@@ -51,10 +51,10 @@ class Init(unittest.TestCase):
     def test_preserves_claude_md(self):
         p = Project()
         self.addCleanup(p.cleanup)
-        (p.root / "CLAUDE.md").write_text("# Мой проект\nправила\n", encoding="utf-8")
+        (p.root / "CLAUDE.md").write_text("# My project\nrules\n", encoding="utf-8")
         p.ok("init")
         md = (p.root / "CLAUDE.md").read_text(encoding="utf-8")
-        self.assertTrue(md.startswith("# Мой проект\nправила"))
+        self.assertTrue(md.startswith("# My project\nrules"))
         self.assertEqual(md.count("<!-- dpcli:begin"), 1)
 
     def test_dry_run(self):

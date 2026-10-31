@@ -1,11 +1,11 @@
-## Процесс работы с агентами (dpcli)
+## Agent workflow (dpcli)
 
-Перед многошаговой работой — прочитать **`{{workflow}}`**. Журнал, задачи, ветки, документы — только `{{cli}}` (`{{cli}} -h`).
+Before multi-step work — read **`{{workflow}}`**. Journal, tasks, branches, docs — only via `{{cli}}` (`{{cli}} -h`).
 
-- Роли: пользователь — решения; главная сессия — планы, координаторы модулей, отчёт раз в 30 мин, слияния в `{{main_branch}}` по одобрению; `dp-coordinator` — контракты, карточки, приёмка, шлюзы; исполнитель — одна задача в своей копии.
-- Сообщения — по протоколу ({{workflow}}, «Протокол сообщений»): ID и команды, без пересказа журнала.
-- Детерминированное — командами `{{cli}}`; журнал `{{plan_dir}}/<м>/` только дописывается.
-- Корректность прежде «нравится»; не выдумывать; не шлифовать.
-- Документы — вход `{{docs_dir}}/INDEX.md`; искать `{{cli}} docs find`, читать по разделам `{{cli}} docs section <путь> [раздел]`, не целиком.
-- Коммиты — только свои файлы (`git commit -- <пути>`); не пушить без команды пользователя.
-- Агенты — `.dpcli/agents/`, процесс — `.dpcli/templates/workflow.md`; `.claude/` обновляет `{{cli}} init`.
+- Roles: user — decisions; main session — plans, module coordinators, report every 30 min, merges into `{{main_branch}}` on approval; `dp-coordinator` — contracts, cards, acceptance, gates; executor — one task in its own copy.
+- Messages — per protocol ({{workflow}}, "Message protocol"): IDs and commands, no retelling of the journal.
+- Deterministic work — via `{{cli}}` commands; journal `{{plan_dir}}/<m>/` is append-only.
+- Correctness over "looks nice"; don't invent; don't polish.
+- Docs — entry point `{{docs_dir}}/INDEX.md`; search with `{{cli}} docs find`, read by section `{{cli}} docs section <path> [section]`, not whole.
+- Commits — only your own files (`git commit -- <paths>`); don't push without the user's command.
+- Agents — `.dpcli/agents/`, workflow — `.dpcli/templates/workflow.md`; `.claude/` is updated by `{{cli}} init`.

@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 /build/
 .pytest_cache/
+.venv/
+.idea/
+.vscode/
+.DS_Store

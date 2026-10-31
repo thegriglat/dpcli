@@ -1,6 +1,6 @@
-"""Разделы markdown: заголовки (вне ```-блоков), поиск раздела по номеру или тексту, границы, оглавление.
+"""Markdown sections: headings (outside ``` blocks), section lookup by number or text, bounds, TOC.
 
-Общее для `plan` и `docs section`.
+Shared by `plan` and `docs section`.
 """
 import re
 
@@ -8,7 +8,7 @@ HEAD_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 
 
 def headings(text):
-    """-> (строки, [(индекс строки, уровень, текст заголовка)])."""
+    """-> (lines, [(line index, level, heading text)])."""
     out, fence = [], False
     lines = text.splitlines()
     for i, line in enumerate(lines):
@@ -26,7 +26,7 @@ def _norm(t):
 
 
 def match_sections(heads, q):
-    """Кандидаты (индексы заголовков): номер из оглавления → он; иначе точное совпадение, затем начало, затем вхождение."""
+    """Candidates (heading indices): a TOC number -> that one; else exact match, then prefix, then substring."""
     q = q.strip()
     if q.isdigit() and 1 <= int(q) <= len(heads):
         return [int(q) - 1]
@@ -39,13 +39,13 @@ def match_sections(heads, q):
 
 
 def find_section(heads, q):
-    """Индекс первого подходящего заголовка; None, если нет."""
+    """Index of the first matching heading; None if none."""
     c = match_sections(heads, q)
     return c[0] if c else None
 
 
 def section_end(lines, heads, sel):
-    """Индекс строки после конца раздела (с подразделами)."""
+    """Index of the line after the section end (with subsections)."""
     _, lvl, _ = heads[sel]
     for j, l2, _ in heads[sel + 1:]:
         if l2 <= lvl:
@@ -58,17 +58,17 @@ def section_len(lines, heads, n):
 
 
 def toc(lines, heads, depth=3, width=90):
-    """Строки нумерованного оглавления: «  N  отступ заголовок  (строк)»."""
+    """Numbered TOC lines: "  N  indent heading  (lines)"."""
     from .util import short
     return [f"{n:>3} {'  ' * (lvl - 1)}{short(t, width)}  ({section_len(lines, heads, n - 1)})"
             for n, (_, lvl, t) in enumerate(heads, 1) if lvl <= depth]
 
 
 def section_body(lines, heads, sel, max_lines=0):
-    """Строки раздела (заголовок + тело + подразделы) без хвостовых пустых; max_lines>0 — обрезать с пометкой."""
+    """Section lines (heading + body + subsections) without trailing blanks; max_lines>0 truncates with a note."""
     body = lines[heads[sel][0]:section_end(lines, heads, sel)]
     while body and not body[-1].strip():
         body.pop()
     if max_lines and len(body) > max_lines:
-        body = body[:max_lines] + [f"… ещё {len(body) - max_lines} строк (--max 0 — всё)"]
+        body = body[:max_lines] + [f"… {len(body) - max_lines} more lines (--max 0 for all)"]
     return body

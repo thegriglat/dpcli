@@ -18,7 +18,7 @@ def expected():
     return ex, rev
 
 
-NEW_AGENT = "---\nname: dp-custom\ndescription: свой\ndpcli_role: executor\ndpcli_review: true\n---\nТекст\n"
+NEW_AGENT = "---\nname: dp-custom\ndescription: custom\ndpcli_role: executor\ndpcli_review: true\n---\nText\n"
 
 
 class Agents(unittest.TestCase):
@@ -35,14 +35,14 @@ class Agents(unittest.TestCase):
         self.assertTrue(ex)
         code, out, err = self.new("nope")
         self.assertNotEqual(code, 0)
-        listed = err.split("есть:")[1].split(";")[0]
+        listed = err.split("have:")[1].split(";")[0]
         self.assertEqual({x.strip() for x in listed.split(",")}, ex)
 
     def test_non_executor_rejected(self):
         for t in ("dp-reviewer", "dp-coordinator", "dp-status"):
             code, _, err = self.new(t)
             self.assertNotEqual(code, 0, t)
-            self.assertIn("не исполнитель", err)
+            self.assertIn("not an executor", err)
 
     def test_missing_type(self):
         code, _, err = self.p.run("task", "new", "aa", "--title", "T")
@@ -52,7 +52,7 @@ class Agents(unittest.TestCase):
     def test_review_flag_per_agent(self):
         ex, rev = expected()
         self.assertTrue(rev and ex - rev)
-        # по одному типу: accept PASS → checked (review) или accepted
+        # one per type: accept PASS → checked (review) or accepted
         for typ in sorted(ex):
             out = self.p.ok("task", "new", "aa", "--type", typ, "--title", typ, "--check", "c", "true", "exit=0")
             tid = out.split(":")[0]
@@ -63,7 +63,7 @@ class Agents(unittest.TestCase):
     def test_custom_agent(self):
         (self.p.root / ".dpcli" / "agents" / "dp-custom.md").write_text(NEW_AGENT, encoding="utf-8")
         mc = self.p.copies / "proj" / "aa"
-        # агенты читаются от корня текущей копии: кладём и туда
+        # agents are read from the current copy root: put it there too
         (mc / ".dpcli" / "agents").mkdir(parents=True, exist_ok=True)
         (mc / ".dpcli" / "agents" / "dp-custom.md").write_text(NEW_AGENT, encoding="utf-8")
         code, out, err = self.new("dp-custom")
@@ -83,7 +83,7 @@ class Agents(unittest.TestCase):
         code, _, err = p.run("task", "new", "aa", "--type", "dp-engineer", "--title", "T")
         self.assertNotEqual(code, 0)
         self.assertIn("solo", err)
-        self.assertNotIn("boss", err.split("есть:")[1].split(";")[0])
+        self.assertNotIn("boss", err.split("have:")[1].split(";")[0])
 
 
 if __name__ == "__main__":

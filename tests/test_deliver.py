@@ -1,4 +1,4 @@
-"""Тесты deliver: squash ветки модуля без журнала, md для людей, архивный тег; свёртка журнала на месте."""
+"""deliver tests: module branch squash without the journal, human md, archive tag; in-place journal folding."""
 import argparse
 import json
 import sys
@@ -27,13 +27,13 @@ def args(module, **kw):
 
 
 class DeliverBase(RepoCase):
-    """Журнал модуля pay и копия его ветки — без тестов, для наследников."""
+    """Journal of module pay and a copy of its branch; no tests, for subclasses."""
     MOD = "pay"
 
     def journal(self, root, accepted=True):
         home = root / "docs/plan" / self.MOD
         (home / "tasks").mkdir(parents=True)
-        (root / "docs/plan" / f"{self.MOD}.md").write_text("# pay — оплата\n")
+        (root / "docs/plan" / f"{self.MOD}.md").write_text("# pay — payments\n")
         jl(home / "events.jsonl", [
             {"t": "2026-10-01T10:00:00", "by": "coordinator", "task": "PY-2", "ev": "created"},
             {"t": "2026-10-01T10:00:00", "by": "coordinator", "task": "PY-10", "ev": "created"},
@@ -41,16 +41,16 @@ class DeliverBase(RepoCase):
             {"t": "2026-10-02T10:00:00", "by": "coordinator", "task": "PY-10", "ev": "accepted"},
         ])
         jl(home / "decisions.jsonl", [
-            {"t": "2026-10-01T09:00:00", "by": "user", "kind": "decision", "text": "Платим в USD", "why": "так проще"},
-            {"t": "2026-10-01T09:30:00", "by": "coordinator", "kind": "question", "id": "Q1", "text": "Чек обязателен?"},
-            {"t": "2026-10-01T09:40:00", "by": "user", "kind": "decision", "text": "Да, обязателен", "answers": "Q1"},
+            {"t": "2026-10-01T09:00:00", "by": "user", "kind": "decision", "text": "Pay in USD", "why": "simpler this way"},
+            {"t": "2026-10-01T09:30:00", "by": "coordinator", "kind": "question", "id": "Q1", "text": "Is a receipt required?"},
+            {"t": "2026-10-01T09:40:00", "by": "user", "kind": "decision", "text": "Yes, required", "answers": "Q1"},
         ])
         (home / "module.json").write_text(json.dumps({"module": self.MOD, "branch": f"feature/{self.MOD}"}))
-        for tid, title in (("PY-2", "Схема"), ("PY-10", "Метрики")):
+        for tid, title in (("PY-2", "Schema"), ("PY-10", "Metrics")):
             (home / "tasks" / f"{tid}.json").write_text(json.dumps({"id": tid, "title": title}, ensure_ascii=False))
             (home / "tasks" / f"{tid}.report.json").write_text(json.dumps(
-                {"summary": f"{title} сделана", "not_done": [], "checks": [{"name": "jest", "pass": True}],
-                 "uncertain": [{"where": "x.ts", "why": "не гонял format", "checked": "generate"}], "dp_feedback": "шум"},
+                {"summary": f"{title} done", "not_done": [], "checks": [{"name": "jest", "pass": True}],
+                 "uncertain": [{"where": "x.ts", "why": "did not run format", "checked": "generate"}], "dp_feedback": "noise"},
                 ensure_ascii=False))
         return home
 
@@ -62,7 +62,7 @@ class DeliverBase(RepoCase):
         self.journal(copy)
         (copy / "code.py").write_text("x = 1\n")
         sh("add", ".", cwd=copy)
-        sh("commit", "-q", "-m", "PY-2: код", cwd=copy)
+        sh("commit", "-q", "-m", "PY-2: code", cwd=copy)
         gitx.reset_worktrees()
         return copy
 
@@ -76,20 +76,20 @@ class Deliver(DeliverBase):
         self.cfg()
         copy = self.module_copy()
         deliver.cmd_deliver(args(self.MOD))
-        self.assertEqual(gitx.git("log", "-1", "--format=%s", cwd=self.main), "pay: pay — оплата")
-        self.assertEqual(gitx.git("rev-list", "--count", "HEAD", cwd=self.main), "2")  # один squash-коммит
+        self.assertEqual(gitx.git("log", "-1", "--format=%s", cwd=self.main), "pay: pay — payments")
+        self.assertEqual(gitx.git("rev-list", "--count", "HEAD", cwd=self.main), "2")  # one squash commit
         self.assertTrue((self.main / "code.py").exists())
         self.assertEqual(sorted(self.tracked(self.main)),
                          ["docs/plan/pay.md", "docs/plan/pay/decisions.md", "docs/plan/pay/summary.md"])
         dec = (self.main / "docs/plan/pay/decisions.md").read_text()
         self.assertIn("### Q1", dec)
-        self.assertIn("**Ответ** (пользователь, 2026-10-01): Да, обязателен", dec)
-        self.assertIn("Платим в USD *Почему:* так проще", dec)
-        self.assertNotIn("Да, обязателен *Почему", dec.split("## Решения")[1])  # ответ не дублируется в решениях
+        self.assertIn("**Answer** (user, 2026-10-01): Yes, required", dec)
+        self.assertIn("Pay in USD *Why:* simpler this way", dec)
+        self.assertNotIn("Yes, required *Why", dec.split("## Decisions")[1])  # the answer is not duplicated in decisions
         summ = (self.main / "docs/plan/pay/summary.md").read_text()
         self.assertLess(summ.index("PY-2"), summ.index("PY-10"))
-        self.assertIn("`x.ts` — не гонял format — проверено: generate", summ)
-        self.assertNotIn("шум", summ)
+        self.assertIn("`x.ts` — did not run format — checked: generate", summ)
+        self.assertNotIn("noise", summ)
         self.assertNotIn("jest", summ)
         self.assertEqual(gitx.git("rev-parse", "archive/pay"), gitx.git("rev-parse", "feature/pay"))
         ev = (copy / "docs/plan/pay/events.jsonl").read_text().splitlines()[-1]
@@ -109,7 +109,7 @@ class Deliver(DeliverBase):
         self.cfg()
         self.journal(self.main)
         sh("add", ".", cwd=self.main)
-        sh("commit", "-q", "-m", "журнал", cwd=self.main)
+        sh("commit", "-q", "-m", "journal", cwd=self.main)
         deliver.cmd_deliver(args(self.MOD, in_place=True))
         self.assertEqual(sorted(self.tracked(self.main)),
                          ["docs/plan/pay.md", "docs/plan/pay/decisions.md", "docs/plan/pay/summary.md"])

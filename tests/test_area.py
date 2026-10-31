@@ -1,4 +1,4 @@
-"""Тесты area модулей, причин решений, закрытия плана и контрактов при сдаче, INDEX.md по подпроектам, deliver --rerender."""
+"""Tests: module areas, decision reasons, closing plan and contracts on delivery, INDEX.md by subproject, deliver --rerender."""
 import argparse
 import json
 import sys
@@ -21,35 +21,38 @@ type: plan
 status: active
 module: pay
 updated: 2026-10-01
-summary: Оплата плана
+summary: Payment plan
 related:
   - docs/contracts/pay.md
 ---
 
-# pay — оплата
+# pay — payments
 """
 CONTRACT = """---
 type: "contract"
 status: "active"
 module: "pay"
 updated: 2026-10-01
-summary: "Стыки pay"
+summary: "pay interfaces"
 related: []
 contracts: []
 ---
 
-# Контракты pay
+# pay contracts
 """
 
 
 class Why(unittest.TestCase):
     def test_source_only_becomes_approved(self):
+        # Russian fixtures exercise the kept Russian alternatives of deliver.SOURCE_ONLY
         for w in ("", "ответ пользователя 2026-10-09", "указание пользователя", "ответ на вопрос", "сообщения пользователя",
-                  "уточнение пользователя 2026-10-06", "приёмка 2026-10-07"):
+                  "уточнение пользователя 2026-10-06", "приёмка 2026-10-07",
+                  "user answer 2026-10-09", "user clarification", "answer to question", "acceptance 2026-10-07"):
             self.assertEqual(deliver.why_of({"by": "user", "why": w}), deliver.APPROVED, w)
 
     def test_real_reason_kept(self):
-        for w in ("уточнение пользователя 2026-10-06: Todo Tree у всех", "постановка задачи CU-12487v2f0pu", "так проще"):
+        for w in ("уточнение пользователя 2026-10-06: Todo Tree у всех", "постановка задачи CU-12487v2f0pu", "так проще",
+                  "user clarification 2026-10-06: Todo Tree for everyone", "simpler"):
             self.assertEqual(deliver.why_of({"by": "user", "why": w}), w)
 
     def test_not_user_kept(self):
@@ -62,7 +65,7 @@ class Area(RepoCase):
         self.cfg(areas=["web", "api"])
         with self.assertRaises(DpError) as e:
             check_area(None)
-        self.assertIn("спросить разработчика", str(e.exception))
+        self.assertIn("ask the developer", str(e.exception))
         with self.assertRaises(DpError):
             check_area("other")
         check_area("web")
@@ -79,7 +82,7 @@ class Area(RepoCase):
         (d / "pay.md").write_text(PLAN)
         (d / "cat.md").write_text(PLAN.replace("module: pay", "module: cat\narea: nope"))
         out = self.check()
-        self.assertIn("docs/plan/pay.md: нет area", out)
+        self.assertIn("docs/plan/pay.md: module doc has no area", out)
         self.assertIn("docs/plan/cat.md: area 'nope'", out)
 
     def check(self):
@@ -99,7 +102,7 @@ class SetFm(unittest.TestCase):
         self.assertIn("related:\n  - docs/contracts/pay.md\n---", out)
         fm, body = docs.split_fm(out)
         self.assertEqual((fm["status"], fm["area"], fm["related"]), ("closed", "web", ["docs/contracts/pay.md"]))
-        self.assertEqual(body, "\n# pay — оплата\n")
+        self.assertEqual(body, "\n# pay — payments\n")
 
     def test_no_frontmatter(self):
         self.assertIsNone(deliver.set_fm("# x\n", status="closed"))
@@ -126,12 +129,12 @@ class DeliverArea(DeliverBase):
         self.assertEqual((contract["status"], contract["area"]), ("closed", "web"))
         dec, body = docs.split_fm((self.main / "docs/plan/pay/decisions.md").read_text())
         self.assertEqual((dec["area"], dec["archive"]), ("web", "archive/pay"))
-        self.assertIn("в git: `archive/pay`", body)
+        self.assertIn("in git: `archive/pay`", body)
         idx = (self.main / "docs/INDEX.md").read_text()
         self.assertIn("## web\n", idx)
-        self.assertNotIn("## api", idx)  # пустые подпроекты не выводятся
-        self.assertIn("- **pay** — Оплата плана [closed", idx)
-        self.assertIn("[решения](plan/pay/decisions.md) · [сводка](plan/pay/summary.md) · полный журнал: `archive/pay`", idx)
+        self.assertNotIn("## api", idx)  # empty subprojects are not listed
+        self.assertIn("- **pay** — Payment plan [closed", idx)
+        self.assertIn("[decisions](plan/pay/decisions.md) · [summary](plan/pay/summary.md) · full journal: `archive/pay`", idx)
         self.assertIn("docs/INDEX.md", gitx.git("ls-files", "--", "docs", cwd=self.main).splitlines())
         self.assertEqual(gitx.dirty(self.main), [])
 
@@ -147,32 +150,32 @@ class DeliverArea(DeliverBase):
         self.cfg(areas=["web"])
         self.journal(self.main)
         m = self.main / "docs/plan/pay/module.json"
-        m.write_text(json.dumps({"module": "pay", "branch": "feature/pay"}))  # старый журнал: area нет
+        m.write_text(json.dumps({"module": "pay", "branch": "feature/pay"}))  # old journal: no area
         sh("add", ".", cwd=self.main)
-        sh("commit", "-q", "-m", "журнал", cwd=self.main)
+        sh("commit", "-q", "-m", "journal", cwd=self.main)
         sh("tag", "archive/old", cwd=self.main)
         sh("rm", "-q", "-r", "docs/plan/pay", cwd=self.main)
-        sh("commit", "-q", "-m", "свёрнут", cwd=self.main)
-        with self.assertRaises(DpError):  # area не задан ни в журнале, ни флагом
+        sh("commit", "-q", "-m", "folded", cwd=self.main)
+        with self.assertRaises(DpError):  # area set neither in the journal nor by flag
             deliver.cmd_deliver(args(self.MOD, rerender=True, from_="archive/old"))
         deliver.cmd_deliver(args(self.MOD, rerender=True, from_="archive/old", area="web"))
         dec, body = docs.split_fm((self.main / "docs/plan/pay/decisions.md").read_text())
         self.assertEqual((dec["area"], dec["archive"]), ("web", "archive/old"))
-        self.assertIn("- 2026-10-01 — Платим в USD *Почему:* так проще", body)
+        self.assertIn("- 2026-10-01 — Pay in USD *Why:* simpler this way", body)
         self.assertEqual(sorted(p.name for p in (self.main / "docs/plan/pay").iterdir()), ["decisions.md", "summary.md"])
         self.cfg(areas=["web"], deliver={"keep": ["decisions.md", "summary.md"], "archive_tag": False})
         deliver.cmd_deliver(args(self.MOD, rerender=True, from_="archive/old", area="web"))
         dec, body = docs.split_fm((self.main / "docs/plan/pay/decisions.md").read_text())
-        self.assertNotIn("archive", dec)  # теги выключены — ссылки на журнал нет
-        self.assertNotIn("Полный журнал", body)
+        self.assertNotIn("archive", dec)  # tags disabled: no journal link
+        self.assertNotIn("Full journal", body)
         plan = docs.split_fm((self.main / "docs/plan/pay.md").read_text())[0]
-        self.assertEqual((plan["status"], plan["updated"]), ("closed", "2026-10-02"))  # последняя запись журнала
+        self.assertEqual((plan["status"], plan["updated"]), ("closed", "2026-10-02"))  # last journal record
         self.assertTrue((self.main / "docs/INDEX.md").exists())
         self.assertFalse((self.main / "build/dpcli/rerender-pay").exists())
 
 
 class IndexConflict(RepoCase):
-    """Две ветки добавляют по модулю — INDEX.md конфликтует; merge dpcli пересобирает его сам."""
+    """Two branches each add a module: INDEX.md conflicts; dpcli merge regenerates it itself."""
 
     def plan(self, mod, upd):
         p = self.main / "docs/plan" / f"{mod}.md"
@@ -195,7 +198,7 @@ class IndexConflict(RepoCase):
         for m in ("base", "aaa", "bbb"):
             self.assertIn(f"- **{m}**", idx)
         self.assertNotIn("<<<<<<<", idx)
-        docs.cmd_index(docs.Ctx(), None)  # дата — из документов: повторная сборка файл не меняет
+        docs.cmd_index(docs.Ctx(), None)  # date comes from the docs: rebuilding does not change the file
         self.assertEqual((self.main / "docs/INDEX.md").read_text(), idx)
         self.assertEqual(gitx.dirty(self.main), [])
 
@@ -213,11 +216,11 @@ class IndexConflict(RepoCase):
 
 
 class FeatureBase(DeliverBase):
-    """Обычный путь: модуль заведён от фичеветки, сдаётся в неё; в main dpcli сам не вливает."""
+    """Normal path: module based on a feature branch, delivered into it; dpcli does not merge into main itself."""
 
     def setUp(self):
         super().setUp()
-        sh("checkout", "-q", "-b", "feat", cwd=self.main)  # главная копия — на фичеветке задачи
+        sh("checkout", "-q", "-b", "feat", cwd=self.main)  # main copy is on the feature branch
 
     def journal(self, root, accepted=True):
         home = super().journal(root, accepted)
@@ -228,34 +231,34 @@ class FeatureBase(DeliverBase):
         self.cfg()
         self.module_copy()
         deliver.cmd_deliver(args(self.MOD, into=None))
-        self.assertEqual(gitx.git("log", "-1", "--format=%s", "feat"), "pay: pay — оплата")
-        self.assertEqual(gitx.git("rev-list", "--count", "main"), "1")  # main не тронут
+        self.assertEqual(gitx.git("log", "-1", "--format=%s", "feat"), "pay: pay — payments")
+        self.assertEqual(gitx.git("rev-list", "--count", "main"), "1")  # main untouched
 
     def test_deliver_into_main_refused(self):
         self.cfg(protect_main=True)
         self.module_copy()
         with self.assertRaises(DpError) as e:
             deliver.cmd_deliver(args(self.MOD, into="main"))
-        self.assertIn("через MR", str(e.exception))
+        self.assertIn("via a feature branch MR", str(e.exception))
 
     def test_merge_task_defaults_to_module_branch(self):
         from dpcli.commands import branches
         self.cfg()
         copy = self.module_copy()
         home = copy / "docs/plan/pay"
-        (home / "tasks/PY-2.json").write_text(json.dumps({"id": "PY-2", "title": "Схема", "base": "feature/pay"}))
+        (home / "tasks/PY-2.json").write_text(json.dumps({"id": "PY-2", "title": "Schema", "base": "feature/pay"}))
         self.assertEqual(branches.base_of("pay/PY-2"), "feature/pay")
         self.assertEqual(branches.base_of("feature/pay"), "feat")
         self.assertIsNone(branches.base_of("feat"))
         merge = dict(into=None, message=None, trailer=None, push=False, no_index=True)
-        with self.assertRaises(DpError) as e:  # ветка не dpcli и --into нет — не угадываем
+        with self.assertRaises(DpError) as e:  # not a dpcli branch and no --into: do not guess
             branches.cmd_merge(argparse.Namespace(branch="feat", **merge))
         self.assertIn("--into", str(e.exception))
-        guard_main("main", False)  # protect_main выключен — в main можно
+        guard_main("main", False)  # protect_main off: main is allowed
         self.cfg(protect_main=True)
-        with self.assertRaises(DpError) as e:  # в main — только явным --into main
+        with self.assertRaises(DpError) as e:  # into main: only with explicit --into main
             guard_main("main", False)
-        self.assertIn("явного --into main", str(e.exception))
+        self.assertIn("explicit --into main", str(e.exception))
 
     def test_module_new_from_current_branch(self):
         from dpcli.commands import branches
@@ -263,10 +266,10 @@ class FeatureBase(DeliverBase):
         new = dict(code=None, area=None, by="main")
         branches.cmd_module_new(argparse.Namespace(module="cat", from_=None, **new))
         meta = json.loads((self.main.parent / "cat/docs/plan/cat/module.json").read_text())
-        self.assertEqual(meta["base"], "feat")  # база — текущая ветка главной копии (фичеветка)
-        with self.assertRaises(DpError) as e:  # модуль не заводят от ветки другого модуля
+        self.assertEqual(meta["base"], "feat")  # base: current branch of the main copy (feature branch)
+        with self.assertRaises(DpError) as e:  # a module is not based on another module's branch
             branches.cmd_module_new(argparse.Namespace(module="dog", from_="feature/cat", **new))
-        self.assertIn("фичеветки", str(e.exception))
+        self.assertIn("feature branch", str(e.exception))
 
 
 

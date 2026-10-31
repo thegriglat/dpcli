@@ -1,13 +1,13 @@
-"""init: настройка Claude Code в проекте из дистрибутива .dpcli (идемпотентно).
+"""init: set up Claude Code in a project from the .dpcli distribution (idempotent).
 
-Рендерит агентов (<agents_dir>/*.md → .claude/agents/<name>.md), скиллы (.dpcli/skills/** → .claude/skills/**),
-процесс (templates/workflow.md → <workflow>), блок CLAUDE.md между маркерами, разрешение в .claude/settings.json,
-строки .gitignore; создаёт dpcli.yml из примера, если конфига нет. Плейсхолдеры {{cli}} {{workflow}} {{plan_dir}}
-{{contracts_dir}} {{docs_dir}} {{main_branch}} {{module_branch}} {{project}} подставляются из конфига.
-Ручные правки сгенерированных файлов видны по манифесту .claude/.dpcli-manifest.json (sha256 записанного) —
-без --force такие файлы не перезаписываются и не удаляются. Файлы, которых нет в манифесте (агенты, скиллы, процесс
-проекта с теми же именами), init не трогает никогда, даже с --force: агент dpcli пропускается, роль своего агента —
-ключ roles в конфиге.
+Renders agents (<agents_dir>/*.md → .claude/agents/<name>.md), skills (.dpcli/skills/** → .claude/skills/**),
+the workflow (templates/workflow.md → <workflow>), the CLAUDE.md block between markers, the .claude/settings.json
+permission, .gitignore lines; creates dpcli.yml from the example if there is no config. Placeholders {{cli}}
+{{workflow}} {{plan_dir}} {{contracts_dir}} {{docs_dir}} {{main_branch}} {{module_branch}} {{project}} come from config.
+Manual edits of generated files are detected via the manifest .claude/.dpcli-manifest.json (sha256 of what was
+written): without --force such files are neither overwritten nor removed. Files not in the manifest (project agents,
+skills, workflow with the same names) are never touched by init, even with --force: the dpcli agent is skipped;
+the role of your own agent goes in the config key roles.
 """
 import hashlib
 import json
@@ -20,11 +20,11 @@ from .. import config, gitx, yamlmini
 from ..agents import ROLES
 from ..util import DpError
 
-DIST = Path(__file__).resolve().parents[3]  # .dpcli (рядом с lib/)
+DIST = Path(__file__).resolve().parents[3]  # .dpcli (next to lib/)
 MANIFEST = ".claude/.dpcli-manifest.json"
 BEGIN, END = "<!-- dpcli:begin -->", "<!-- dpcli:end -->"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
-SKIPPED = "изменён вручную; правьте источник в {src} или --force"
+SKIPPED = "edited manually; edit the source in {src} or --force"
 
 
 def sha(b):
@@ -34,7 +34,7 @@ def sha(b):
 def git_root():
     t = gitx.git("rev-parse", "--show-toplevel")
     if not t:
-        raise DpError("не в рабочей копии git — сначала `git init` (и первый коммит), затем `.dpcli/dpcli init`")
+        raise DpError("not in a git working copy: run `git init` (and a first commit) first, then `.dpcli/dpcli init`")
     return Path(t).resolve()
 
 
@@ -49,20 +49,20 @@ class Init:
     def __init__(self, a):
         self.a = a
         self.root = git_root()
-        self.rows = []  # (путь, статус, примечание)
+        self.rows = []  # (path, status, note)
         self.warn = []
         self.dry = a.dry_run or a.check
         self.cli = relp(DIST / "dpcli", self.root)
 
-    # ---------- вывод ----------
+    # ---------- output ----------
     def row(self, path, status, note=""):
         self.rows.append((path, status, note))
 
-    # ---------- конфиг ----------
+    # ---------- config ----------
     def ensure_config(self):
         for n in config.NAMES:
             if (self.root / n).is_file():
-                self.row(n, "без изменений", "конфиг")
+                self.row(n, "unchanged", "config")
                 return
         example = DIST / "dpcli.example.yml"
         if self.a.json or not example.is_file():
@@ -73,11 +73,11 @@ class Init:
             name = "dpcli.yml"
             text = example.read_text(encoding="utf-8")
             data = config.parse_file(example)
-        self.row(name, "создан", "конфиг" + ("" if name == "dpcli.json" else " из dpcli.example.yml"))
+        self.row(name, "created", "config" + ("" if name == "dpcli.json" else " from dpcli.example.yml"))
         if not self.dry:
             (self.root / name).write_text(text, encoding="utf-8")
             config.reset()
-        else:  # конфига нет на диске — значения из того, что был бы создан
+        else:  # no config on disk: values from the one that would be created
             config._CFG = config.merge(config.DEFAULTS, data)
             config._PATH = None
 
@@ -89,7 +89,7 @@ class Init:
             "contracts_dir": config.contracts_dir(),
             "docs_dir": config.docs_dir(),
             "main_branch": config.main_branch(),
-            "module_branch": config.subst(config.get("module_branch"), module="<модуль>"),
+            "module_branch": config.subst(config.get("module_branch"), module="<module>"),
             "project": config.project(),
         }
 
@@ -103,16 +103,16 @@ class Init:
             return m[0]
         out = PLACEHOLDER.sub(rep, text)
         if unknown:
-            self.warn.append(f"{where}: неизвестные плейсхолдеры " + ", ".join("{{%s}}" % u for u in sorted(unknown)))
+            self.warn.append(f"{where}: unknown placeholders " + ", ".join("{{%s}}" % u for u in sorted(unknown)))
         return out
 
-    # ---------- план генерируемых файлов ----------
+    # ---------- plan of generated files ----------
     def plan_agents(self):
         d = config.repo_path(config.get("agents_dir", ".dpcli/agents"), root=self.root)
         src_rel = relp(d, self.root)
         files = sorted(d.glob("*.md")) if d.is_dir() else []
         if not files:
-            raise DpError(f"нет определений агентов в {src_rel}/*.md")
+            raise DpError(f"no agent definitions in {src_rel}/*.md")
         errors, names, roles = [], {}, set()
         out = []
         for f in files:
@@ -121,29 +121,29 @@ class Init:
             try:
                 meta, _ = yamlmini.frontmatter(text)
             except yamlmini.YamlError as e:
-                errors.append(f"{fr}: frontmatter не разобран ({e})")
+                errors.append(f"{fr}: frontmatter parse error ({e})")
                 continue
             if not meta:
-                errors.append(f"{fr}: нет frontmatter (--- … ---)")
+                errors.append(f"{fr}: no frontmatter (--- … ---)")
                 continue
             name, role = meta.get("name"), meta.get("dpcli_role")
             if not name or not re.fullmatch(r"[\w.-]+", str(name)):
-                errors.append(f"{fr}: нет name (или недопустимые символы)")
+                errors.append(f"{fr}: no name (or invalid characters)")
                 continue
             if role not in ROLES:
-                errors.append(f"{fr}: dpcli_role «{role}» — нужно одно из {', '.join(ROLES)}")
+                errors.append(f"{fr}: dpcli_role \"{role}\": must be one of {', '.join(ROLES)}")
                 continue
             if name in names:
-                errors.append(f"{fr}: name «{name}» уже в {names[name]}")
+                errors.append(f"{fr}: name \"{name}\" already in {names[name]}")
                 continue
             names[name] = fr
             roles.add(role)
             out.append((f".claude/agents/{name}.md", text.encode(), f, src_rel))
         if errors:
-            raise DpError("ошибки в определениях агентов:\n  " + "\n  ".join(errors))
+            raise DpError("errors in agent definitions:\n  " + "\n  ".join(errors))
         for r in ("executor", "reviewer"):
             if r not in roles:
-                self.warn.append(f"{src_rel}: нет ни одного агента с dpcli_role: {r}")
+                self.warn.append(f"{src_rel}: no agent with dpcli_role: {r}")
         return out
 
     def plan_skills(self):
@@ -163,18 +163,18 @@ class Init:
     def plan_workflow(self):
         f = DIST / "templates" / "workflow.md"
         if not f.is_file():
-            raise DpError(f"нет шаблона процесса {relp(f, self.root)}")
+            raise DpError(f"no workflow template {relp(f, self.root)}")
         dest = relp(config.repo_path(config.get("workflow"), root=self.root), self.root)
         return [(dest, self.render(f.read_text(encoding="utf-8"), relp(f, self.root)).encode(), f,
                  relp(f, self.root))]
 
-    # ---------- запись с манифестом ----------
+    # ---------- writing with manifest ----------
     def sync_generated(self, plan):
         mp = self.root / MANIFEST
         try:
             old = json.loads(mp.read_text()).get("files", {}) if mp.is_file() else {}
         except (json.JSONDecodeError, AttributeError):
-            self.warn.append(f"{MANIFEST}: не разобран — считаю пустым")
+            self.warn.append(f"{MANIFEST}: parse error; treating as empty")
             old = {}
         new = {}
         foreign = self.foreign_groups(plan, old)
@@ -184,19 +184,19 @@ class Init:
             h = sha(data)
             cur = p.read_bytes() if p.is_file() else None
             g = self.group(dest)
-            if g in foreign:  # файл/скилл проекта (не создан init): не трогаем никогда, даже с --force
+            if g in foreign:  # project file/skill (not created by init): never touched, even with --force
                 if g not in shown:
                     shown.add(g)
-                    self.row(g, "пропущен", foreign[g])
+                    self.row(g, "skipped", foreign[g])
                 continue
             if cur is None:
-                st, write = "создан", True
+                st, write = "created", True
             elif cur == data:
-                st, write = "без изменений", False
+                st, write = "unchanged", False
             elif old.get(dest) == sha(cur) or self.a.force:
-                st, write = "обновлён" + (" (--force)" if old.get(dest) != sha(cur) else ""), True
+                st, write = "updated" + (" (--force)" if old.get(dest) != sha(cur) else ""), True
             else:
-                self.row(dest, "пропущен", SKIPPED.format(src=src_rel))
+                self.row(dest, "skipped", SKIPPED.format(src=src_rel))
                 if dest in old:
                     new[dest] = old[dest]
                 continue
@@ -211,10 +211,10 @@ class Init:
             if not p.is_file():
                 continue
             if sha(p.read_bytes()) != old[dest] and not self.a.force:
-                self.row(dest, "пропущен", "нет в источнике, но изменён вручную — удалите сами или --force")
+                self.row(dest, "skipped", "not in source, but edited manually; remove it yourself or --force")
                 new[dest] = old[dest]
                 continue
-            self.row(dest, "удалён", "нет в источнике")
+            self.row(dest, "removed", "not in source")
             if not self.dry:
                 p.unlink()
                 d = p.parent
@@ -227,14 +227,14 @@ class Init:
 
     @staticmethod
     def group(dest):
-        """Единица владения: скилл — каталог .claude/skills/<имя>/, остальное — файл."""
+        """Ownership unit: a skill is the directory .claude/skills/<name>/, anything else is a file."""
         parts = dest.split("/")
         if parts[:2] == [".claude", "skills"] and len(parts) > 3:
             return "/".join(parts[:3]) + "/"
         return dest
 
     def foreign_groups(self, plan, old):
-        """{группа: примечание} — уже есть в проекте, не в манифесте init и отличается от того, что init записал бы."""
+        """{group: note}: already in the project, not in the init manifest and differs from what init would write."""
         want = {d: data for d, data, *_ in plan}
         out = {}
         for dest in want:
@@ -245,20 +245,20 @@ class Init:
                 d = self.root / g
                 files = [f for f in d.rglob("*") if f.is_file()] if d.is_dir() else []
                 if any(relp(f, self.root) not in old and want.get(relp(f, self.root)) != f.read_bytes() for f in files):
-                    out[g] = "скилл проекта (не создан init) — не трогаю"
+                    out[g] = "project skill (not created by init); not touched"
                 continue
             p = self.root / dest
             if p.is_file() and dest not in old and p.read_bytes() != want[dest]:
-                out[g] = ("агент проекта; роль: см. roles в конфиге" if dest.startswith(".claude/agents/")
-                          else "файл проекта (не создан init) — не трогаю")
+                out[g] = ("project agent; role: see roles in config" if dest.startswith(".claude/agents/")
+                          else "project file (not created by init); not touched")
         return out
 
-    # ---------- слияние с чужими файлами ----------
+    # ---------- merging into foreign files ----------
     def put_text(self, rel, old, new, note=""):
         if old == new:
-            self.row(rel, "без изменений", note)
+            self.row(rel, "unchanged", note)
             return
-        self.row(rel, "создан" if old is None else "обновлён", note)
+        self.row(rel, "created" if old is None else "updated", note)
         if not self.dry:
             p = self.root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -277,9 +277,9 @@ class Init:
                 new = old[:i] + block + old[j + len(END):]
             else:
                 if (i >= 0) != (j >= 0) or i > j >= 0:
-                    self.warn.append(f"CLAUDE.md: маркеры {BEGIN}/{END} не парны — блок дописан в конец")
+                    self.warn.append(f"CLAUDE.md: markers {BEGIN}/{END} unpaired; block appended at the end")
                 new = old.rstrip("\n") + ("\n\n" if old.strip() else "") + block + "\n"
-        self.put_text("CLAUDE.md", old, new, "блок dpcli")
+        self.put_text("CLAUDE.md", old, new, "dpcli block")
 
     def settings(self):
         p = self.root / ".claude" / "settings.json"
@@ -287,13 +287,13 @@ class Init:
         try:
             data = json.loads(old) if old and old.strip() else {}
         except json.JSONDecodeError as e:
-            raise DpError(f".claude/settings.json: неверный JSON ({e}) — поправьте файл")
+            raise DpError(f".claude/settings.json: invalid JSON ({e}); fix the file")
         if not isinstance(data, dict):
-            raise DpError(".claude/settings.json: ожидался объект")
+            raise DpError(".claude/settings.json: expected an object")
         perm = f"Bash({self.cli} *)"
         allow = data.setdefault("permissions", {}).setdefault("allow", [])
         if perm in allow:
-            self.row(".claude/settings.json", "без изменений", perm)
+            self.row(".claude/settings.json", "unchanged", perm)
             return
         allow.append(perm)
         self.put_text(".claude/settings.json", old, json.dumps(data, ensure_ascii=False, indent=2) + "\n", perm)
@@ -309,13 +309,13 @@ class Init:
         have = {ln.strip().strip("/") for ln in (old or "").splitlines()}
         add = [w for w in want if w.strip("/") not in have]
         if not add:
-            self.row(".gitignore", "без изменений")
+            self.row(".gitignore", "unchanged")
             return
         base = old or ""
         new = base + ("\n" if base and not base.endswith("\n") else "") + "\n".join(add) + "\n"
         self.put_text(".gitignore", old, new, "+ " + " ".join(add))
 
-    # ---------- запуск ----------
+    # ---------- run ----------
     def run(self):
         self.ensure_config()
         self.vals = self.values()
@@ -325,28 +325,28 @@ class Init:
         self.settings()
         self.gitignore()
         for w in self.warn:
-            print(f"dpcli: предупреждение: {w}", file=sys.stderr)
+            print(f"dpcli: warning: {w}", file=sys.stderr)
         if self.a.check:
-            bad = [r for r in self.rows if r[1] != "без изменений"]
+            bad = [r for r in self.rows if r[1] != "unchanged"]
             for path, st, note in bad:
                 print(f"{path}: {st}" + (f" — {note}" if note else ""))
-            print(f"init --check: {'нужен ' + self.cli + ' init' if bad else '.claude актуален'}")
+            print(f"init --check: {'need ' + self.cli + ' init' if bad else '.claude up to date'}")
             return 1 if bad else 0
         w = max(len(r[0]) for r in self.rows)
         if self.dry:
-            print("init --dry-run: ничего не записано, что было бы сделано:")
+            print("init --dry-run: nothing written; what would be done:")
         for path, st, note in self.rows:
             print(f"{path.ljust(w)}  {st}" + (f" — {note}" if note else ""))
         counts = {}
         for _, st, _ in self.rows:
             k = st.split(" (")[0]
             counts[k] = counts.get(k, 0) + 1
-        print("Итого: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
-        print(f"\nЗакоммитьте .dpcli/, .claude/, CLAUDE.md и конфиг в {self.vals['main_branch']} — копии модулей и задач "
-              "создаются из веток и без коммита не увидят ни dpcli, ни агентов.")
-        print(f"Дальше: главная сессия читает {self.vals['workflow']}; модуль — "
-              f"`{self.cli} module new <модуль> --code XX`, затем задачи — `{self.cli} task new …` "
-              f"(справка `{self.cli} -h`). Агенты и процесс правятся в .dpcli/, затем снова `{self.cli} init`.")
+        print("Total: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+        print(f"\nCommit .dpcli/, .claude/, CLAUDE.md and the config to {self.vals['main_branch']}: module and task copies "
+              "are created from branches and without a commit will see neither dpcli nor the agents.")
+        print(f"Next: the main session reads {self.vals['workflow']}; module: "
+              f"`{self.cli} module new <module> --code XX`, then tasks: `{self.cli} task new …` "
+              f"(help: `{self.cli} -h`). Edit agents and workflow in .dpcli/, then rerun `{self.cli} init`.")
         return 0
 
 
@@ -355,11 +355,11 @@ def cmd_init(a):
 
 
 def register(sp):
-    q = sp.add_parser("init", help="настроить Claude Code в проекте: агенты, скиллы, процесс, CLAUDE.md, разрешения (идемпотентно)")
-    q.add_argument("--dry-run", action="store_true", help="ничего не писать, только показать таблицу действий")
-    q.add_argument("--force", action="store_true", help="перезаписать/удалить и вручную изменённые файлы из манифеста init (файлы проекта — никогда)")
-    q.add_argument("--check", action="store_true", help="только проверить, что .claude актуален (код 1 — нужен init; для CI)")
+    q = sp.add_parser("init", help="set up Claude Code in the project: agents, skills, workflow, CLAUDE.md, permissions (idempotent)")
+    q.add_argument("--dry-run", action="store_true", help="write nothing, only show the action table")
+    q.add_argument("--force", action="store_true", help="overwrite/remove even manually edited files from the init manifest (project files: never)")
+    q.add_argument("--check", action="store_true", help="only check that .claude is up to date (exit 1: init needed; for CI)")
     g = q.add_mutually_exclusive_group()
-    g.add_argument("--yaml", action="store_true", help="создать конфиг dpcli.yml из примера (по умолчанию)")
-    g.add_argument("--json", action="store_true", help="создать конфиг dpcli.json из значений по умолчанию")
+    g.add_argument("--yaml", action="store_true", help="create config dpcli.yml from the example (default)")
+    g.add_argument("--json", action="store_true", help="create config dpcli.json from defaults")
     q.set_defaults(func=cmd_init)

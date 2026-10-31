@@ -1,4 +1,4 @@
-"""module new, sync, merge, gc — ветки и рабочие копии."""
+"""module new, sync, merge, gc — branches and working copies."""
 import fnmatch
 import subprocess
 from pathlib import Path
@@ -10,13 +10,13 @@ from ..util import DpError, pretty, subgroup
 
 
 def resolve_branch(x):
-    """модуль или имя ветки → ветка."""
+    """module or branch name → branch."""
     if gitx.branch_exists(x):
         return x
     mb = config.module_branch(x)
     if gitx.branch_exists(mb):
         return mb
-    raise DpError(f"ветки {x} (или {mb}) нет")
+    raise DpError(f"no branch {x} (or {mb})")
 
 
 def cmd_module_new(a):
@@ -24,29 +24,29 @@ def cmd_module_new(a):
     br = config.module_branch(mod)
     copy = config.module_copy(mod)
     if gitx.branch_exists(br):
-        raise DpError(f"ветка {br} уже есть")
+        raise DpError(f"branch {br} already exists")
     if copy.exists():
-        raise DpError(f"{copy} уже существует")
+        raise DpError(f"{copy} already exists")
     base = a.from_ or gitx.git("branch", "--show-current", cwd=gitx.toplevel())
     if not base:
-        raise DpError("текущая копия не на ветке — указать базу модуля --from <ветка>")
+        raise DpError("current copy is not on a branch — give module base --from <branch>")
     if is_work_branch(base):
-        raise DpError(f"{base} — ветка модуля или задачи dpcli; модуль заводится от фичеветки задачи: --from <ветка>")
+        raise DpError(f"{base} is a dpcli module or task branch; a module starts from a feature branch: --from <branch>")
     if not gitx.branch_exists(base):
-        raise DpError(f"базовой ветки {base} нет")
+        raise DpError(f"no base branch {base}")
     if a.code:
-        check_code(a.code, mod)  # до git worktree add: неверный код не оставляет ветку и копию
+        check_code(a.code, mod)  # before git worktree add: a bad code leaves no branch or copy
     check_area(a.area)
     copies.create(copy, br, base)
     try:
         home = copy / config.plan_dir() / mod
         ensure_module(mod, home, copy=pretty(copy), code=a.code, area=a.area, base=base)
-        add_event(home, None, "note", by_default(a), note=f"модуль заведён от {base}")
-        h = gitx.commit_paths(copy, [home], f"{mod}: заведён модуль dpcli (module.json, events.jsonl)")
+        add_event(home, None, "note", by_default(a), note=f"module created from {base}")
+        h = gitx.commit_paths(copy, [home], f"{mod}: dpcli module created (module.json, events.jsonl)")
     except BaseException:
-        copies.rollback(copy, br)  # не оставлять ветку модуля без копии и журнала
+        copies.rollback(copy, br)  # do not leave a module branch without copy and journal
         raise
-    print(f"{mod}: {br} от {base} @ {pretty(copy)}, коммит {h}")
+    print(f"{mod}: {br} from {base} @ {pretty(copy)}, commit {h}")
     for ln in copies.setup(copy):
         print(f"  {ln}")
 
@@ -54,7 +54,7 @@ def cmd_module_new(a):
 def cmd_copy_setup(a):
     path = Path(a.path).expanduser() if a.path else gitx.toplevel()
     if not (path / ".git").exists():
-        raise DpError(f"{pretty(path)} — не рабочая копия git")
+        raise DpError(f"{pretty(path)} is not a git working copy")
     for ln in copies.setup(path):
         print(ln)
 
@@ -63,15 +63,15 @@ def cmd_sync(a):
     br = resolve_branch(a.target)
     path = gitx.copy_of(br)
     if not path:
-        raise DpError(f"у ветки {br} нет рабочей копии")
+        raise DpError(f"branch {br} has no working copy")
     main = base_of(br)
-    h, n, kind = gitx.do_merge(path, main, a.message or f"Слияние {main} в {br}", trailers=a.trailer)
-    print(f"{br}: {main} уже влит" if kind == "up-to-date" else f"{br}: влит {main}, {h}, файлов {n}")
+    h, n, kind = gitx.do_merge(path, main, a.message or f"Merge {main} into {br}", trailers=a.trailer)
+    print(f"{br}: {main} already merged" if kind == "up-to-date" else f"{br}: merged {main}, {h}, files {n}")
 
 
 def base_of(br):
-    """Куда по умолчанию вливается ветка и откуда она подтягивает свежее: ветка задачи → её base из карточки
-    (ветка модуля), ветка модуля → база модуля (фичеветка), иначе — None."""
+    """Where a branch merges by default and pulls updates from: task branch → its card's base
+    (module branch), module branch → module base (feature branch), else None."""
     mod = config.module_of_branch(br)
     mods = all_modules()
     if mod and mod in mods:
@@ -88,18 +88,18 @@ def cmd_merge(a):
     br = resolve_branch(a.branch)
     into = a.into or base_of(br)
     if not into:
-        raise DpError(f"{br} — не ветка модуля или задачи dpcli: указать --into <ветка>")
+        raise DpError(f"{br} is not a dpcli module or task branch: give --into <branch>")
     guard_main(into, bool(a.into))
     path = gitx.copy_of(into)
     if not path:
-        raise DpError(f"ветка {into} нигде не выписана — нужна копия, где она открыта")
+        raise DpError(f"branch {into} is not checked out anywhere — need a copy with it checked out")
     subj = gitx.gitr("log", "-1", "--format=%s", br, "--").stdout.strip()
-    h, n, kind = gitx.do_merge(path, br, a.message or f"Слияние {br}: {subj}", ff=False, trailers=a.trailer)
-    out = f"{into}: {br} уже влита" if kind == "up-to-date" else f"{into} {h}: слияние {br}, файлов {n}"
+    h, n, kind = gitx.do_merge(path, br, a.message or f"Merge {br}: {subj}", ff=False, trailers=a.trailer)
+    out = f"{into}: {br} already merged" if kind == "up-to-date" else f"{into} {h}: merge {br}, files {n}"
     if a.push:
         r = gitx.gitr("push", "origin", into, cwd=path)
         if r.returncode:
-            raise DpError(f"{out}; push не удался: {gitx.gerr(r)}")
+            raise DpError(f"{out}; push failed: {gitx.gerr(r)}")
         out += "; pushed"
     if into == config.main_branch() and kind != "up-to-date" and not a.no_index:
         msg = sem_index_bg()
@@ -108,7 +108,7 @@ def cmd_merge(a):
 
 
 def gc_live_reason(b, merged, mods):
-    """Почему влитую ветку нельзя убирать: у модуля/задачи идёт работа. None — можно."""
+    """Why a merged branch must not be removed: module/task work is ongoing. None — removable."""
     mod = config.module_of_branch(b)
     is_mod = mod is not None
     if not is_mod:
@@ -122,20 +122,20 @@ def gc_live_reason(b, merged, mods):
     if is_mod:
         live = sorted(t for t in cards if st.get(t, {}).get("status", "created") not in FINAL)
         if live:
-            return f"у модуля незакрытые задачи ({', '.join(live[:4])}{'…' if len(live) > 4 else ''})"
+            return f"module has open tasks ({', '.join(live[:4])}{'…' if len(live) > 4 else ''})"
         subs = [x for x in gitx.local_branches()
                 if x not in merged and (config.task_branch_fields(x) or {}).get("module") == mod]
         if subs:
-            return f"живые ветки задач ({', '.join(subs[:3])})"
+            return f"live task branches ({', '.join(subs[:3])})"
         return None
     for t, c in cards.items():
         if c and c.get("branch") == b and st.get(t, {}).get("status", "created") not in FINAL:
-            return f"задача {t} не закрыта ({st.get(t, {}).get('status', 'created')})"
+            return f"task {t} not closed ({st.get(t, {}).get('status', 'created')})"
     return None
 
 
 def gc_symlink_reason(path, wt_paths):
-    """Симлинки из других копий внутрь path (например на .venv) — их сломает удаление копии."""
+    """Symlinks from other copies into path (e.g. to .venv) — removing the copy would break them."""
     root = Path(path).resolve()
     hits = []
     for other in wt_paths:
@@ -152,18 +152,18 @@ def gc_symlink_reason(path, wt_paths):
                     continue
                 if tgt == root or root in tgt.parents:
                     hits.append(f"{pretty(f)} → {pretty(tgt)}")
-    return f"на неё ссылаются симлинки других копий ({'; '.join(hits[:2])})" if hits else None
+    return f"symlinked from other copies ({'; '.join(hits[:2])})" if hits else None
 
 
 def ignored_dirs(path):
-    """Игнорируемые git каталоги копии, кроме кешей сборки gc.ignore_dirs (их тоже снимет удаление копии)."""
+    """Git-ignored dirs of the copy, except build caches gc.ignore_dirs (removing the copy deletes them too)."""
     skip = set(config.get("gc.ignore_dirs") or [])
     return [f for xy, f in gitx.status_entries(path, "--ignored") if xy == "!!" and f.endswith("/")
             and f.rstrip("/").split("/")[0] not in skip and not any(f"{d}/" in f for d in skip)]
 
 
 def junk_ok(f):
-    """Неотслеживаемый файл — сгенерированный (gc.ignore_globs, либо внутри каталога из gc.ignore_dirs), не работа."""
+    """Untracked file is generated (gc.ignore_globs, or inside a gc.ignore_dirs dir), not work."""
     name = f.rstrip("/").rsplit("/", 1)[-1]
     if set(f.rstrip("/").split("/")) & {str(d) for d in config.get("gc.ignore_dirs") or []}:
         return True
@@ -171,17 +171,17 @@ def junk_ok(f):
 
 
 def remove_copy(path):
-    """Снять копию: отказ (→ причина) при изменениях в отслеживаемых файлах и при неотслеживаемых файлах-работе;
-    игнорируемое git и сгенерированное (gc.ignore_dirs, gc.ignore_globs) копию удалять не мешает. → (причина|None, игнорируемые каталоги)."""
+    """Remove a copy: refuse (→ reason) on changes in tracked files or untracked work files;
+    git-ignored and generated files (gc.ignore_dirs, gc.ignore_globs) do not block removal. → (reason|None, ignored dirs)."""
     d = gitx.dirty(path)
     if d:
-        return f"грязная копия ({len(d)} файлов)", []
+        return f"dirty copy ({len(d)} files)", []
     junk = [f for xy, f in gitx.status_entries(path) if xy == "??"]
     other = [f for f in junk if not junk_ok(f)]
     if other:
-        return f"неотслеживаемые файлы ({len(other)}: {', '.join(other[:3])})", []
+        return f"untracked files ({len(other)}: {', '.join(other[:3])})", []
     ign = ignored_dirs(path)
-    # только сгенерированное — не работа: git отказывает на неотслеживаемом, поэтому --force
+    # only generated files, not work: git refuses on untracked files, hence --force
     r = gitx.gitr("worktree", "remove", *(["--force"] if junk else []), str(path))
     if r.returncode:
         return gitx.gerr(r), []
@@ -199,72 +199,72 @@ def cmd_gc(a):
         want = {x if "/" in x else config.module_branch(x) for x in a.branches} | set(a.branches)
         miss = [x for x in a.branches if x not in merged and config.module_branch(x) not in merged]
         if miss:
-            raise DpError(f"не влиты в {main} или нет такой ветки: {', '.join(miss)}")
+            raise DpError(f"not merged into {main} or no such branch: {', '.join(miss)}")
         merged = [b for b in merged if b in want]
     mods = all_modules()
     for b in merged:
         if gitx.gitr("rev-parse", b).stdout.strip() == main_tip:
-            continue  # ветка = главной (только что заведена или влита fast-forward) — не трогаем
+            continue  # branch == main (just created or fast-forwarded) — leave it
         path = wt.get(b)
-        label = f"{b}" + (f" @ {pretty(path)}" if path else " (без копии)")
+        label = f"{b}" + (f" @ {pretty(path)}" if path else " (no copy)")
         why = gc_live_reason(b, merged, mods) or (path and gc_symlink_reason(path, wt.values()))
         if why:
-            print(f"пропуск {label}: {why}")
+            print(f"skip {label}: {why}")
             continue
         if not a.remove:
             ign = ignored_dirs(path) if path else []
-            print(label + (f" (снимет и игнорируемые: {', '.join(ign[:4])})" if ign else ""))
+            print(label + (f" (also removes ignored: {', '.join(ign[:4])})" if ign else ""))
             n += 1
             continue
         if path and path == here:
-            print(f"пропуск {label}: это текущая копия")
+            print(f"skip {label}: current copy")
             continue
         ign = []
         if path:
             why_not, ign = remove_copy(path)
             if why_not:
-                print(f"пропуск {label}: {why_not}")
+                print(f"skip {label}: {why_not}")
                 continue
         r = gitx.gitr("branch", "-d", b)
-        print((f"удалено {label}" + (f" (с игнорируемыми: {', '.join(ign[:4])})" if path and ign else ""))
-              if r.returncode == 0 else f"копия снята, ветка {b} осталась: {gitx.gerr(r)}")
+        print((f"removed {label}" + (f" (with ignored: {', '.join(ign[:4])})" if path and ign else ""))
+              if r.returncode == 0 else f"copy removed, branch {b} kept: {gitx.gerr(r)}")
         n += 1
     if not n:
-        print("влитых веток нет")
+        print("no merged branches")
 
 
 def register(sp):
-    msp = subgroup(sp, "module", "модуль: new (ветка + копия + журнал) | init (только журнал)")
-    q = msp.add_parser("new", help="ветка модуля (module_branch) + git worktree (module_copy) + module.json/events.jsonl")
+    msp = subgroup(sp, "module", "module: new (branch + copy + journal) | init (journal only)")
+    q = msp.add_parser("new", help="module branch (module_branch) + git worktree (module_copy) + module.json/events.jsonl")
     q.add_argument("module"); q.add_argument("--from", dest="from_", default=None,
-                                             help="база модуля — фичеветка задачи (по умолчанию текущая ветка главной копии)")
+                                             help="module base — the feature branch (default: current branch of the main copy)")
     q.add_argument("--by")
-    q.add_argument("--code", help="код модуля для ID задач: 2–4 заглавные латинские (NN, UC), уникален")
-    q.add_argument("--area", help="подпроект модуля (ключ areas в конфиге): чью продуктовую цель закрывает модуль")
+    q.add_argument("--code", help="module code for task IDs: 2–4 uppercase Latin letters (NN, UC), unique")
+    q.add_argument("--area", help="module subproject (areas key in config): whose product goal the module serves")
     q.set_defaults(func=cmd_module_new)
 
-    csp = subgroup(sp, "copy", "рабочие копии: setup (подготовить копию — хуки, env, node_modules, worktree.setup)")
-    q = csp.add_parser("setup", help="перенести в копию из главной то, чего нет в git (конфиг worktree.*); идемпотентно")
-    q.add_argument("path", nargs="?", help="путь к копии (по умолчанию текущая)")
+    csp = subgroup(sp, "copy", "working copies: setup (prepare a copy — hooks, env, node_modules, worktree.setup)")
+    q = csp.add_parser("setup", help="bring into the copy from main what git lacks (config worktree.*); idempotent")
+    q.add_argument("path", nargs="?", help="copy path (default: current)")
     q.set_defaults(func=cmd_copy_setup)
 
-    q = sp.add_parser("sync", help="влить базу модуля (ветку, от которой он заведён) в ветку модуля (в её копии)")
-    q.add_argument("target", metavar="модуль|ветка")
-    q.add_argument("--message", "-m", help="сообщение слияния вместо стандартного")
-    q.add_argument("--trailer", action="append", help="доп. строка в конец сообщения (можно несколько)")
+    q = sp.add_parser("sync", help="merge the module base (branch it started from) into the module branch (in its copy)")
+    q.add_argument("target", metavar="module|branch")
+    q.add_argument("--message", "-m", help="merge message instead of the default")
+    q.add_argument("--trailer", action="append", help="extra line appended to the message (repeatable)")
     q.set_defaults(func=cmd_sync)
 
-    q = sp.add_parser("merge", help="слияние --no-ff ветки в целевую (в копии, где она выписана)")
-    q.add_argument("branch", metavar="ветка|модуль")
-    q.add_argument("--into", default=None, help="целевая ветка (по умолчанию: задача → ветка модуля, модуль → его база; "
-                                               "в main_branch — только явно)")
+    q = sp.add_parser("merge", help="--no-ff merge of a branch into the target (in the copy where it is checked out)")
+    q.add_argument("branch", metavar="branch|module")
+    q.add_argument("--into", default=None, help="target branch (default: task → module branch, module → its base; "
+                                               "main_branch — only explicitly)")
     q.add_argument("--push", action="store_true")
-    q.add_argument("--no-index", action="store_true", help="не обновлять смысловой индекс в фоне (при слиянии в главную ветку)")
-    q.add_argument("--message", "-m", help="сообщение слияния вместо стандартного")
-    q.add_argument("--trailer", action="append", help="доп. строка в конец сообщения (можно несколько)")
+    q.add_argument("--no-index", action="store_true", help="do not refresh the semantic index in background (on merge into main)")
+    q.add_argument("--message", "-m", help="merge message instead of the default")
+    q.add_argument("--trailer", action="append", help="extra line appended to the message (repeatable)")
     q.set_defaults(func=cmd_merge)
 
-    q = sp.add_parser("gc", help="копии и ветки, уже влитые в главную ветку (список; --remove — удалить)")
-    q.add_argument("branches", nargs="*", metavar="ВЕТКА|МОДУЛЬ", help="только эти (модуль → ветка модуля)")
+    q = sp.add_parser("gc", help="copies and branches already merged into main (list; --remove deletes)")
+    q.add_argument("branches", nargs="*", metavar="BRANCH|MODULE", help="only these (module → module branch)")
     q.add_argument("--remove", action="store_true")
     q.set_defaults(func=cmd_gc)

@@ -1,4 +1,4 @@
-"""Тесты исправлений dpcli: пути с пробелами/кириллицей, docs check, ссылки на контракты, копии (git-crypt, gc)."""
+"""dpcli fix tests: paths with spaces/Cyrillic, docs check, contract refs, copies (git-crypt, gc)."""
 import os
 import subprocess
 import sys
@@ -18,7 +18,7 @@ def sh(*args, cwd):
 
 
 class RepoCase(unittest.TestCase):
-    """Временный репозиторий main в tmp/main; cwd процесса — в нём."""
+    """Temp repo main in tmp/main; the process cwd is inside it."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -45,18 +45,18 @@ class RepoCase(unittest.TestCase):
 
 
 class ScopePaths(RepoCase):
-    NAME = "docs/Мои заметки/Контракт.md"
+    NAME = "docs/Мои заметки/Контракт.md"  # Cyrillic + spaces on purpose
 
     def test_pat_whole_path_with_spaces(self):
         pats = accept._pat(self.NAME)
         self.assertTrue(accept.path_in(self.NAME, pats))
 
     def test_pat_with_note(self):
-        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py — функция f")))
-        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py функция f")))
-        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"{self.NAME} — раздел 2")))
-        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"`{self.NAME}` (раздел)")))
-        self.assertFalse(accept.path_in("src/y.py", accept._pat("src/x.py — функция f")))
+        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py — function f")))
+        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py function f")))
+        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"{self.NAME} — section 2")))
+        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"`{self.NAME}` (section)")))
+        self.assertFalse(accept.path_in("src/y.py", accept._pat("src/x.py — function f")))
 
     def test_changed_files_unquoted(self):
         f = self.main / self.NAME
@@ -85,10 +85,10 @@ class ScopePaths(RepoCase):
 
 class DocsFrontmatter(unittest.TestCase):
     def test_related_block_list(self):
-        fm, body = docs.split_fm("---\ntype: plan\nupdated: 2026-10-07\nrelated:\n  - docs/a.md\n  - docs/b c.md\n---\n\nтело\n")
+        fm, body = docs.split_fm("---\ntype: plan\nupdated: 2026-10-07\nrelated:\n  - docs/a.md\n  - docs/b c.md\n---\n\nbody\n")
         self.assertEqual(fm["related"], ["docs/a.md", "docs/b c.md"])
         self.assertEqual(fm["updated"], "2026-10-07")
-        self.assertEqual(body.strip(), "тело")
+        self.assertEqual(body.strip(), "body")
 
     def test_related_inline_list(self):
         fm, _ = docs.split_fm('---\ntype: plan\nrelated: [docs/a.md, docs/b.md]\n---\nx')
@@ -97,12 +97,12 @@ class DocsFrontmatter(unittest.TestCase):
         self.assertEqual(fm["related"], ["docs/a.md"])
 
     def test_flat_fallback(self):
-        fm, _ = docs.split_fm('---\nsummary: "Вывод: что-то"\nrelated: []\n---\nx')
+        fm, _ = docs.split_fm('---\nsummary: "Conclusion: something"\nrelated: []\n---\nx')
         self.assertEqual(fm["related"], [])
-        self.assertEqual(fm["summary"], "Вывод: что-то")
+        self.assertEqual(fm["summary"], "Conclusion: something")
 
     def test_no_frontmatter(self):
-        self.assertIsNone(docs.split_fm("текст")[0])
+        self.assertIsNone(docs.split_fm("text")[0])
 
 
 class DocsCheckPaths(RepoCase):
@@ -124,7 +124,7 @@ class DocsCheckPaths(RepoCase):
         (self.main / "docs").mkdir()
         good = "---\ntype: plan\nstatus: active\nupdated: 2026-01-01\nsummary: ok\nrelated:\n  - docs/good.md\n---\nt\n"
         (self.main / "docs/good.md").write_text(good)
-        (self.main / "docs/bad.md").write_text("без frontmatter")
+        (self.main / "docs/bad.md").write_text("no frontmatter")
         self.cfg()
         ctx = docs.Ctx()
 
@@ -202,13 +202,13 @@ class Copies(RepoCase):
     def test_remove_copy_refuses_work(self):
         self.cfg()
         path = self.make_copy()
-        (path / "new.txt").write_text("работа")
+        (path / "new.txt").write_text("work")
         why, _ = branches.remove_copy(path)
-        self.assertIn("неотслеживаемые", why)
+        self.assertIn("untracked", why)
         (path / "new.txt").unlink()
         (path / "a.txt").write_text("changed")
         why, _ = branches.remove_copy(path)
-        self.assertIn("грязная", why)
+        self.assertIn("dirty", why)
         self.assertTrue(path.exists())
 
 

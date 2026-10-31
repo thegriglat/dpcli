@@ -11,7 +11,7 @@ from .plan import DEFAULT_SECTION, plan_edit
 def cmd_event(a):
     mod, home, task = resolve_target(a.target)
     if task is None and a.kind != "note":
-        raise DpError("для модуля — только note; для задачи — ID")
+        raise DpError("for a module: note only; for a task: ID")
     add_event(home, task, a.kind, by_default(a), note=a.note or "", commits=a.commit)
     print(f"{task or mod}: {a.kind}")
 
@@ -25,10 +25,10 @@ def cmd_decide(a):
     plan_note = ""
     if a.plan is not None:
         if a.ask:
-            raise DpError("--plan — для решений, не для --ask")
+            raise DpError("--plan is for decisions, not --ask")
         line = f"- **{a.text}** ({d['t'][:10]})" + (f" — {a.why}" if a.why else "")
         _, title, _ = plan_edit(a.module, a.plan, append=line, create=a.plan == DEFAULT_SECTION)
-        plan_note = f"; в план: {short(title, 40)}"
+        plan_note = f"; to plan: {short(title, 40)}"
     if a.why:
         d["why"] = a.why
     if a.task:
@@ -41,11 +41,11 @@ def cmd_decide(a):
         if a.answers:
             d["answers"] = a.answers
     append_jsonl(home / "decisions.jsonl", d)
-    print(f"{a.module}: {d.get('id', 'решение')} записан{'' if a.ask else 'о'} ({d['by']}){plan_note}")
+    print(f"{a.module}: {d.get('id', 'decision')} recorded ({d['by']}){plan_note}")
 
 
 def mark(e):
-    """Хвост строки журнала: пометка unparsed и источник (записи, перенесённые из старых журналов)."""
+    """Journal line tail: unparsed mark and source (records migrated from old journals)."""
     return (" [unparsed]" if e.get("unparsed") else "") + (f" [{e['src']}]" if e.get("src") else "")
 
 
@@ -61,15 +61,15 @@ def cmd_log(a):
             n = (" — " + short(e["note"], 100 if not a.full else 10000)) if e.get("note") else ""
             print(f"{t[5:16].replace('T', ' ')} {e.get('task') or '·'} {e['ev']} ({e.get('by', '-')}){c}{n}{mark(e)}")
         else:
-            tag = ("вопрос " + str(e.get("id", ""))) if e.get("kind") == "question" else (
-                "решение" + (f" (ответ на {e['answers']})" if e.get("answers") else ""))
-            why = f" — почему: {short(e['why'], 100 if not a.full else 10000)}" if e.get("why") else ""
+            tag = ("question " + str(e.get("id", ""))) if e.get("kind") == "question" else (
+                "decision" + (f" (answer to {e['answers']})" if e.get("answers") else ""))
+            why = f" — why: {short(e['why'], 100 if not a.full else 10000)}" if e.get("why") else ""
             print(f"{t[5:16].replace('T', ' ')} {e.get('task') or '·'} {tag} ({e.get('by', '-')}): "
                   f"{short(e.get('text', ''), 100 if not a.full else 10000)}{why}{mark(e)}")
 
 
 def inbox_task(a):
-    """inbox <ID>: дополнения и правки карточки с прошлого чтения (метка — по читателю и задаче)."""
+    """inbox <ID>: addenda and card edits since last read (stamp per reader and task)."""
     mod, home = find_task(a.module)
     reader = a.by or os.environ.get("DPCLI_ROLE") or "executor"
     stamp_p = home / f".read_{reader}.{a.module}"
@@ -79,11 +79,11 @@ def inbox_task(a):
         if e.get("task") != a.module or e.get("t", "") <= since or e.get("by") == reader:
             continue
         if e.get("addendum"):
-            items.append((e["t"], f"дополнение ({e.get('by', '-')}): {e['note']}"))
+            items.append((e["t"], f"addendum ({e.get('by', '-')}): {e['note']}"))
         elif e.get("ev") == "edited":
-            items.append((e["t"], f"карточка правлена ({e.get('by', '-')}): {e.get('note', '')} — {CLI} task show {a.module} --diff"))
+            items.append((e["t"], f"card edited ({e.get('by', '-')}): {e.get('note', '')} — {CLI} task show {a.module} --diff"))
     if not items:
-        print(f"{a.module}: нового нет")
+        print(f"{a.module}: nothing new")
     for t, what in items[-a.max:]:
         print(f"{hm(t)} {short(what, 400 if not a.full else 10000)}")
     if not a.peek:
@@ -95,7 +95,7 @@ def cmd_inbox(a):
     if a.module not in mods and ID_RE.match(a.module):
         return inbox_task(a)
     if a.module not in mods:
-        raise DpError(f"модуль {a.module} не найден (есть: {', '.join(mods) or 'нет'})")
+        raise DpError(f"module {a.module} not found (have: {', '.join(mods) or 'none'})")
     home = mods[a.module]
     reader = a.by or os.environ.get("DPCLI_ROLE") or "coordinator"
     stamp_p = home / f".read_{reader}"
@@ -107,22 +107,22 @@ def cmd_inbox(a):
         if d.get("t", "") < since or d.get("by") == reader:
             continue
         if d.get("kind") == "question":
-            what = f"вопрос {d['id']}: {d['text']}"
+            what = f"question {d['id']}: {d['text']}"
         elif d.get("answers"):
-            what = f"ответ на {d['answers']} «{short(qtext.get(d['answers'], ''), 60)}»: {d['text']}"
+            what = f"answer to {d['answers']} \"{short(qtext.get(d['answers'], ''), 60)}\": {d['text']}"
         else:
-            what = f"решение: {d['text']}"
+            what = f"decision: {d['text']}"
         items.append((d["t"], f"{what}" + (f" — {d['why']}" if d.get("why") else "") + f" ({d.get('by', '-')})"))
     for e in read_jsonl(home / "events.jsonl"):
         if e.get("t", "") >= since and e.get("ev") in ("plan", "note") and e.get("by") != reader:
-            items.append((e["t"], f"{'правка плана' if e['ev'] == 'plan' else 'заметка'} ({e.get('by', '-')}): {e.get('note', '')}"))
+            items.append((e["t"], f"{'plan edit' if e['ev'] == 'plan' else 'note'} ({e.get('by', '-')}): {e.get('note', '')}"))
     items.sort()
     if not items:
-        print(f"{a.module}: нового нет")
+        print(f"{a.module}: nothing new")
     else:
         skipped = max(0, len(items) - a.max)
         if skipped:
-            print(f"… ещё {skipped} старых")
+            print(f"… {skipped} more older")
         for t, what in items[-a.max:]:
             print(f"{hm(t)} {short(what, 400 if not a.full else 10000)}")
     if not a.peek:
@@ -130,7 +130,7 @@ def cmd_inbox(a):
 
 
 def find_open_question(qid, module=None):
-    """(модуль, дом, вопрос) по Qn или модуль/Qn."""
+    """(module, home, question) by Qn or module/Qn."""
     if "/" in qid:
         module, _, qid = qid.partition("/")
     mods = all_modules()
@@ -140,9 +140,9 @@ def find_open_question(qid, module=None):
             continue
         hits += [(m, h, q) for q in open_questions(h) if q.get("id") == qid]
     if not hits:
-        raise DpError(f"открытого вопроса {qid} нет" + (f" в модуле {module}" if module else "") + f" ({CLI} questions)")
+        raise DpError(f"no open question {qid}" + (f" in module {module}" if module else "") + f" ({CLI} questions)")
     if len(hits) > 1:
-        raise DpError(f"{qid} открыт в нескольких модулях ({', '.join(m for m, _, _ in hits)}): --module")
+        raise DpError(f"{qid} is open in several modules ({', '.join(m for m, _, _ in hits)}): --module")
     return hits[0]
 
 
@@ -151,7 +151,7 @@ def cmd_questions(a):
     mods = all_modules()
     if a.module:
         if a.module not in mods:
-            raise DpError(f"модуль {a.module} не найден (есть: {', '.join(mods) or 'нет'})")
+            raise DpError(f"module {a.module} not found (have: {', '.join(mods) or 'none'})")
         mods = {a.module: mods[a.module]}
     for m, h in mods.items():
         if not (a.all or a.module):
@@ -168,51 +168,51 @@ def cmd_questions(a):
             print(f"{q['id']} [{m}] ({age(q['t'])}) {'✓' if d else '?'} {short(q['text'], lim)}"
                   + (f"\n    → {short(d['text'], lim)} ({d.get('by', '-')}, {hm(d['t'])})" if d else ""))
     if not n:
-        print("открытых вопросов нет" if not (a.all or a.module) else "вопросов нет")
+        print("no open questions" if not (a.all or a.module) else "no questions")
 
 
 def cmd_answer(a):
     mod, home, q = find_open_question(a.qid, a.module)
     d = {"t": now(), "by": a.by or "user", "kind": "decision", "text": a.text, "answers": q["id"]}
     append_jsonl(home / "decisions.jsonl", d)
-    print(f"{mod}: ответ на {q['id']} записан ({d['by']}) → {CLI} inbox {mod}")
+    print(f"{mod}: answer to {q['id']} recorded ({d['by']}) → {CLI} inbox {mod}")
 
 
 def register(sp):
-    q = sp.add_parser("event", help="событие задачи (или note модуля) в events.jsonl")
-    q.add_argument("target", metavar="ID|модуль"); q.add_argument("kind", choices=EVENT_KINDS)
+    q = sp.add_parser("event", help="task event (or module note) to events.jsonl")
+    q.add_argument("target", metavar="ID|module"); q.add_argument("kind", choices=EVENT_KINDS)
     q.add_argument("--commit", action="append"); q.add_argument("--note"); q.add_argument("--by")
     q.set_defaults(func=cmd_event)
 
-    q = sp.add_parser("decide", help="решение (или --ask: вопрос пользователю) в decisions.jsonl")
+    q = sp.add_parser("decide", help="decision (or --ask: question to the user) to decisions.jsonl")
     q.add_argument("module"); q.add_argument("text")
     q.add_argument("--by", help="user|coordinator|main"); q.add_argument("--why"); q.add_argument("--task")
-    q.add_argument("--ask", action="store_true", help="открыть вопрос (шлюз) → Qn")
-    q.add_argument("--answers", metavar="Qn", help="закрывает вопрос")
-    q.add_argument("--plan", nargs="?", const=DEFAULT_SECTION, metavar="РАЗДЕЛ",
-                   help=f"дописать «- **решение** (дата) — почему» в раздел плана (без значения — «{DEFAULT_SECTION}»)")
+    q.add_argument("--ask", action="store_true", help="open a question (gate) → Qn")
+    q.add_argument("--answers", metavar="Qn", help="closes the question")
+    q.add_argument("--plan", nargs="?", const=DEFAULT_SECTION, metavar="SECTION",
+                   help=f"append \"- **decision** (date) — why\" to a plan section (no value: \"{DEFAULT_SECTION}\")")
     q.add_argument("--date", help=argparse.SUPPRESS)
     q.set_defaults(func=cmd_decide)
 
-    q = sp.add_parser("log", help="последние события модуля или задачи")
-    q.add_argument("target", metavar="ID|модуль"); q.add_argument("-n", type=int, default=10)
+    q = sp.add_parser("log", help="recent module or task events")
+    q.add_argument("target", metavar="ID|module"); q.add_argument("-n", type=int, default=10)
     q.add_argument("--full", action="store_true")
-    q.add_argument("--no-decisions", dest="no_decisions", action="store_true", help="не показывать решения/вопросы")
+    q.add_argument("--no-decisions", dest="no_decisions", action="store_true", help="hide decisions/questions")
     q.set_defaults(func=cmd_log)
 
-    q = sp.add_parser("inbox", help="новое для читателя в модуле: решения, ответы, правки плана, заметки")
-    q.add_argument("module", metavar="модуль|ID")
-    q.add_argument("--by", help="читатель (по умолчанию $DPCLI_ROLE или coordinator; для ID — executor)")
-    q.add_argument("--peek", action="store_true", help="не отмечать прочитанным"); q.add_argument("--max", type=int, default=20)
+    q = sp.add_parser("inbox", help="new for the reader in a module: decisions, answers, plan edits, notes")
+    q.add_argument("module", metavar="module|ID")
+    q.add_argument("--by", help="reader (default $DPCLI_ROLE or coordinator; for ID: executor)")
+    q.add_argument("--peek", action="store_true", help="do not mark as read"); q.add_argument("--max", type=int, default=20)
     q.add_argument("--full", action="store_true")
     q.set_defaults(func=cmd_inbox)
 
-    q = sp.add_parser("questions", help="открытые вопросы пользователю по всем модулям (--all/--module — с отвеченными и ответами)")
+    q = sp.add_parser("questions", help="open questions to the user across modules (--all/--module: incl. answered, with answers)")
     q.add_argument("--full", action="store_true")
-    q.add_argument("--all", action="store_true", help="и отвеченные, с текстом ответа")
-    q.add_argument("--module", help="только модуль (все его вопросы с ответами)")
+    q.add_argument("--all", action="store_true", help="also answered, with answer text")
+    q.add_argument("--module", help="only this module (all its questions with answers)")
     q.set_defaults(func=cmd_questions)
 
-    q = sp.add_parser("answer", help="ответ пользователя на вопрос Qn (попадает в inbox модуля)")
-    q.add_argument("qid", metavar="Qn|модуль/Qn"); q.add_argument("text"); q.add_argument("--module"); q.add_argument("--by")
+    q = sp.add_parser("answer", help="user answer to question Qn (goes to the module inbox)")
+    q.add_argument("qid", metavar="Qn|module/Qn"); q.add_argument("text"); q.add_argument("--module"); q.add_argument("--by")
     q.set_defaults(func=cmd_answer)

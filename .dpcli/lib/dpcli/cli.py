@@ -1,4 +1,4 @@
-"""Разбор аргументов и запуск команд. build() собирает парсер из register(sp) модулей commands/*."""
+"""Argument parsing and command dispatch. build() assembles the parser from register(sp) of commands/* modules."""
 import argparse
 import importlib
 import sys
@@ -8,17 +8,17 @@ from .reexec import maybe_reexec
 from .util import CLI, DpError, Parser, die
 
 COMMANDS = ["task", "roles", "journal_cmds", "accept", "report", "status", "plan", "branches", "deliver", "search", "jobs"]
-OPTIONAL = ["init", "docs"]  # появляются отдельно; нет модуля — команды нет
+OPTIONAL = ["init", "docs"]  # shipped separately; no module — no command
 
 
 def build():
-    p = Parser(prog="dpcli", description="Журнал, карточки задач и приёмка модулей. Влить ветку модуля в ветку задачи — "
+    p = Parser(prog="dpcli", description="Journal, task cards and module acceptance. Merge the module branch into a task branch: "
                                          f"{CLI} task sync <ID>.",
                formatter_class=argparse.RawDescriptionHelpFormatter,
-               epilog="Автор событий: --by или $DPCLI_ROLE. Конфиг: dpcli.json | dpcli.yml в корне проекта. "
-                      "Коды: 0 ок, 1 ошибка/FAIL, 2 аргументы.")
+               epilog="Event author: --by or $DPCLI_ROLE. Config: dpcli.json | dpcli.yml in the project root. "
+                      "Exit codes: 0 ok, 1 error/FAIL, 2 arguments.")
     p.add_argument("--version", action="version", version=f"dpcli {VERSION}")
-    sp = p.add_subparsers(dest="cmd", required=True, parser_class=Parser, metavar="команда")
+    sp = p.add_subparsers(dest="cmd", required=True, parser_class=Parser, metavar="command")
     for name in COMMANDS + OPTIONAL:
         try:
             mod = importlib.import_module(f".commands.{name}", __package__)
@@ -31,7 +31,7 @@ def build():
 
 
 def hoist_job_opts(argv):
-    """job start --tmux … <имя> <таймаут> <команда…>: опции между действием и командой (REMAINDER их не разбирает) — в начало."""
+    """job start --tmux … <name> <timeout> <command…>: move options between the action and the command (REMAINDER skips them) to the front."""
     if argv[:1] != ["job"]:
         return argv
     rest, hoisted, pos, i = argv[1:], [], 0, 0

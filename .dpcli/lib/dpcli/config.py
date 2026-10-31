@@ -1,7 +1,7 @@
-"""Конфиг проекта: dpcli.json | dpcli.yml | dpcli.yaml (ищется вверх от cwd до toplevel git; json приоритетнее).
+"""Project config: dpcli.json | dpcli.yml | dpcli.yaml (searched upward from cwd to git toplevel; json wins).
 
-Значения по умолчанию — DEFAULTS; файл накладывается глубоким слиянием (null в файле = значение по умолчанию).
-Шаблоны путей и веток: {module}, {task}, {project}, {copies}; `~` раскрывается.
+Defaults are DEFAULTS; the file is deep-merged on top (null in the file = default value).
+Path and branch templates: {module}, {task}, {project}, {copies}; `~` is expanded.
 """
 import copy
 import json
@@ -15,9 +15,9 @@ from .util import DpError
 NAMES = ("dpcli.json", "dpcli.yml", "dpcli.yaml")
 
 DEFAULTS = {
-    "project": None,  # по умолчанию — имя каталога главной рабочей копии
+    "project": None,  # default: directory name of the main working copy
     "main_branch": "main",
-    # true — в main_branch dpcli вливает только по явному --into и только модуль, заведённый от неё (обычный путь — MR)
+    # true: dpcli merges into main_branch only on explicit --into and only a module based on it (normal path: MR)
     "protect_main": False,
     "module_branch": "feature/{module}",
     "task_branch": "{module}/{task}",
@@ -26,42 +26,42 @@ DEFAULTS = {
     "task_copy": "{copies}/{project}/{module}-{task}",
     "plan_dir": "docs/plan",
     "contracts_dir": "docs/contracts",
-    # подпроекты монорепы, к которым относится модуль (module new --area); пусто — area не используется
+    # monorepo subprojects a module belongs to (module new --area); empty: area not used
     "areas": [],
     "docs_dir": "docs",
     "checks": {
-        "env": {},  # доп. переменные окружения проверок; {tmpdir} — свежий временный каталог
-        "tests": None,  # шаблон команды для проверок {tests: ФИЛЬТР}; {filter} — фильтр
+        "env": {},  # extra env vars for checks; {tmpdir}: fresh temp directory
+        "tests": None,  # command template for checks {tests: FILTER}; {filter}: the filter
         "log_dir": "build/dpcli",
-        # регэксп итога прогона тестов: группы (?P<total>) и (?P<failed>), по желанию (?P<skipped>);
-        # None — встроенный «N тестов, M упало[, K пропущено]»; нет совпадения — судим по коду выхода
+        # regex for the test run summary: groups (?P<total>) and (?P<failed>), optionally (?P<skipped>);
+        # None: built-in "N tests, M failed[, K skipped]"; no match: judge by exit code
         "tests_summary": None,
     },
     "artifacts_dir": "build/artifacts",
     "reserved_codes": [],
     "gc": {"ignore_dirs": ["build", "__pycache__"], "ignore_globs": []},
     "sem": {
-        "enabled": False,  # смысловой поиск (search --sem, index) — опционально, нужен Ollama
+        "enabled": False,  # semantic search (search --sem, index): optional, needs Ollama
         "model": "bge-m3",
         "url": "http://localhost:11434",
         "cache_dir": "~/.cache/dpcli/{project}",
         "globs": ["docs/**/*.md", "CHANGELOG.md"],
     },
     "jobs": {"dir": "~/.cache/dpcli/{project}/jobs", "tmux_session": "dp", "cpu_slots": None},
-    "locks": None,  # каталог замков lock cpu|gpu; по умолчанию <jobs.dir>/locks
-    # сдача модуля (deliver): что из <plan_dir>/<модуль>/ попадает в итоговую ветку; журнал — под архивным тегом
+    "locks": None,  # lock directory for lock cpu|gpu; default <jobs.dir>/locks
+    # module delivery (deliver): what from <plan_dir>/<module>/ goes to the final branch; journal: under the archive tag
     "deliver": {"keep": ["decisions.md", "summary.md"], "archive_tag": "archive/{module}"},
     "agents_dir": ".dpcli/agents",
-    # свои агенты проекта (.claude/agents) в процессе dpcli без правки их файлов: {имя: {role, review}}
+    # project's own agents (.claude/agents) in the dpcli process without editing their files: {name: {role, review}}
     "roles": {},
     "workflow": ".claude/dpcli-workflow.md",
-    # подготовка новых рабочих копий (module new, task new, copy setup) — см. copies.py
+    # preparing new working copies (module new, task new, copy setup); see copies.py
     "worktree": {
-        "hooks": True,  # докопировать относительный core.hooksPath (напр. .husky/_) из главной копии
-        # игнорируемые git пути главной копии: шаблон без «/» — по имени на любой глубине, со «/» — от корня
-        "link": ["node_modules"],  # жёсткими ссылками (cp -al), на другой ФС — копией
-        "copy": [".env", ".env.*"],  # обычной копией
-        "setup": None,  # команда bash в новой копии; env DPCLI_COPY, DPCLI_MAIN_COPY, DPCLI_BRANCH
+        "hooks": True,  # copy a relative core.hooksPath (e.g. .husky/_) from the main copy
+        # git-ignored paths of the main copy: pattern without "/" matches by name at any depth, with "/" from root
+        "link": ["node_modules"],  # as hard links (cp -al), on another FS as a copy
+        "copy": [".env", ".env.*"],  # as a plain copy
+        "setup": None,  # bash command in the new copy; env DPCLI_COPY, DPCLI_MAIN_COPY, DPCLI_BRANCH
         "setup_timeout": 1800,
     },
 }
@@ -71,7 +71,7 @@ _PATH = None
 
 
 def merge(base, over):
-    """Глубокое слияние словарей: over поверх base; None в over не затирает значение base."""
+    """Deep dict merge: over on top of base; None in over does not overwrite the base value."""
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
         if v is None and k in out:
@@ -84,7 +84,7 @@ def merge(base, over):
 
 
 def find_file():
-    """Путь к файлу конфига или None: от cwd вверх до toplevel git (вне git — только cwd)."""
+    """Config file path or None: from cwd up to git toplevel (outside git: cwd only)."""
     from . import gitx
     cwd = Path.cwd().resolve()
     top = gitx.git("rev-parse", "--show-toplevel")
@@ -109,16 +109,16 @@ def parse_file(p):
     try:
         data = json.loads(text) if p.name.endswith(".json") else yamlmini.loads(text)
     except (json.JSONDecodeError, yamlmini.YamlError) as e:
-        raise DpError(f"{p}: не разобран ({e})")
+        raise DpError(f"{p}: parse error ({e})")
     if data is None:
         data = {}
     if not isinstance(data, dict):
-        raise DpError(f"{p}: ожидался словарь ключей")
+        raise DpError(f"{p}: expected a mapping")
     return data
 
 
 def load():
-    """Конфиг (кэш на процесс)."""
+    """Config (cached per process)."""
     global _CFG, _PATH
     if _CFG is None:
         _PATH = find_file()
@@ -137,7 +137,7 @@ def reset():
 
 
 def get(key, default=None):
-    """Значение по ключу с точками: get('checks.tests')."""
+    """Value by dotted key: get('checks.tests')."""
     v = load()
     for part in key.split("."):
         if not isinstance(v, dict) or part not in v:
@@ -166,7 +166,7 @@ def copies_dir():
 
 
 def subst(tpl, **kw):
-    """Подставить {module} {task} {project} {copies} (и переданные kw); неизвестные {…} остаются как есть."""
+    """Substitute {module} {task} {project} {copies} (and given kw); unknown {…} are left as is."""
     tpl = str(tpl)
     vals = dict(kw)
     if "{project}" in tpl and "project" not in vals:
@@ -181,12 +181,12 @@ def subst(tpl, **kw):
 
 
 def expand(tpl, **kw):
-    """Шаблон пути → Path с раскрытым ~."""
+    """Path template → Path with ~ expanded."""
     return Path(os.path.expanduser(subst(tpl, **kw)))
 
 
 def repo_path(tpl, root=None, **kw):
-    """Путь из конфига: абсолютный (или ~) — как есть, относительный — от корня рабочей копии."""
+    """Path from config: absolute (or ~) as is, relative from the working copy root."""
     from . import gitx
     p = expand(tpl, **kw)
     return p if p.is_absolute() else Path(root or gitx.toplevel()) / p
@@ -225,13 +225,13 @@ def docs_dir():
 
 
 def areas():
-    """Допустимые area модулей из конфига (порядок — порядок разделов INDEX.md); [] — area не используется."""
+    """Allowed module areas from config (order = INDEX.md section order); []: area not used."""
     v = get("areas") or []
     return [v] if isinstance(v, str) else [str(x) for x in v]
 
 
 def branch_fields(tpl, br):
-    """Поля шаблона ветки ({module}, {task}) по имени ветки или None, если не подходит."""
+    """Branch template fields ({module}, {task}) from a branch name, or None if it does not match."""
     rx, pos = "", 0
     for m in re.finditer(r"\{(\w+)\}", tpl):
         rx += re.escape(tpl[pos:m.start()])
@@ -249,7 +249,7 @@ def branch_fields(tpl, br):
 
 
 def module_of_branch(br):
-    """Модуль по ветке модуля (шаблон module_branch) или None."""
+    """Module from a module branch (module_branch template) or None."""
     f = branch_fields(get("module_branch"), br)
     return f.get("module") if f else None
 

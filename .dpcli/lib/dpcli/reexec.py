@@ -1,4 +1,4 @@
-"""Перезапуск из главной копии: если в главном worktree `.dpcli` новее (VERSION) — exec его с теми же аргументами."""
+"""Re-exec from the main copy: if `.dpcli` in the main worktree is newer (VERSION), exec it with the same arguments."""
 import os
 import re
 import sys
@@ -11,7 +11,7 @@ DIST_DIR = PKG_DIR.parent.parent                   # .dpcli
 
 
 def entry():
-    """Точка входа этой копии (.dpcli/dpcli) — для запуска себя в фоне."""
+    """Entry point of this copy (.dpcli/dpcli), for launching itself in the background."""
     return DIST_DIR / "dpcli"
 
 
@@ -34,7 +34,7 @@ def maybe_reexec():
         m = re.search(r"^VERSION\s*=\s*(\d+)", init.read_text()[:6000], re.M)
         if not m or int(m[1]) <= VERSION:
             return
-        print(f"dpcli: версия {VERSION} старее главной ({m[1]}) — запуск из {main} (DPCLI_NO_REEXEC=1 — отключить)",
+        print(f"dpcli: version {VERSION} older than main ({m[1]}), running {main} (DPCLI_NO_REEXEC=1 to disable)",
               file=sys.stderr)
         os.environ["DPCLI_REEXECED"] = "1"
         os.execv(sys.executable, [sys.executable, str(main)] + sys.argv[1:])

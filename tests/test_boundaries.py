@@ -1,10 +1,10 @@
-"""Волна 3: бережный init, роли своих агентов, task brief, копия задачи из task new, проверка границ в accept."""
+"""Wave 3: careful init, project agent roles, task brief, task copy from task new, bounds check in accept."""
 import json
 import unittest
 
 from helpers import Project, git
 
-PROJ_AGENT = "---\nname: dp-engineer\ndescription: свой инженер проекта\nmodel: opus\n---\nМой текст\n"
+PROJ_AGENT = "---\nname: dp-engineer\ndescription: project's own engineer\nmodel: opus\n---\nMy text\n"
 
 
 class InitKeepsProject(unittest.TestCase):
@@ -15,19 +15,19 @@ class InitKeepsProject(unittest.TestCase):
         (r / ".claude" / "agents").mkdir(parents=True)
         (r / ".claude" / "agents" / "dp-engineer.md").write_text(PROJ_AGENT, encoding="utf-8")
         (r / ".claude" / "skills" / "start-to-do").mkdir(parents=True)
-        (r / ".claude" / "skills" / "start-to-do" / "SKILL.md").write_text("мой скилл\n", encoding="utf-8")
-        (r / ".claude" / "dpcli-workflow.md").write_text("мой процесс\n", encoding="utf-8")
+        (r / ".claude" / "skills" / "start-to-do" / "SKILL.md").write_text("my skill\n", encoding="utf-8")
+        (r / ".claude" / "dpcli-workflow.md").write_text("my process\n", encoding="utf-8")
 
     def assert_kept(self):
         r = self.p.root
         self.assertEqual((r / ".claude" / "agents" / "dp-engineer.md").read_text(encoding="utf-8"), PROJ_AGENT)
-        self.assertEqual((r / ".claude" / "skills" / "start-to-do" / "SKILL.md").read_text(encoding="utf-8"), "мой скилл\n")
-        self.assertEqual((r / ".claude" / "dpcli-workflow.md").read_text(encoding="utf-8"), "мой процесс\n")
+        self.assertEqual((r / ".claude" / "skills" / "start-to-do" / "SKILL.md").read_text(encoding="utf-8"), "my skill\n")
+        self.assertEqual((r / ".claude" / "dpcli-workflow.md").read_text(encoding="utf-8"), "my process\n")
 
     def test_skips_project_files_even_with_force(self):
         out = self.p.ok("init")
-        self.assertIn("агент проекта; роль: см. roles в конфиге", out)
-        self.assertIn("скилл проекта", out)
+        self.assertIn("project agent; role: see roles in config", out)
+        self.assertIn("project skill", out)
         self.assert_kept()
         self.assertTrue((self.p.root / ".claude" / "agents" / "dp-writer.md").is_file())
         man = json.loads((self.p.root / ".claude" / ".dpcli-manifest.json").read_text())["files"]
@@ -38,11 +38,11 @@ class InitKeepsProject(unittest.TestCase):
     def test_force_only_for_manifest_files(self):
         self.p.ok("init")
         f = self.p.root / ".claude" / "agents" / "dp-writer.md"
-        f.write_text(f.read_text(encoding="utf-8") + "правка\n", encoding="utf-8")
-        self.assertIn("изменён вручную", self.p.ok("init"))
-        self.assertIn("правка", f.read_text(encoding="utf-8"))
+        f.write_text(f.read_text(encoding="utf-8") + "local-tweak\n", encoding="utf-8")
+        self.assertIn("edited manually", self.p.ok("init"))
+        self.assertIn("local-tweak", f.read_text(encoding="utf-8"))
         self.p.ok("init", "--force")
-        self.assertNotIn("правка", f.read_text(encoding="utf-8"))
+        self.assertNotIn("local-tweak", f.read_text(encoding="utf-8"))
         self.assert_kept()
 
 
@@ -54,19 +54,19 @@ class Roles(unittest.TestCase):
         d.mkdir(parents=True)
         (d / "backend.md").write_text("---\nname: backend\nmodel: sonnet\n---\nx\n", encoding="utf-8")
         (d / "fixer.md").write_text("---\nname: fixer\ndpcli_role: executor\n---\nx\n", encoding="utf-8")
-        p.commit_all("агенты проекта")
+        p.commit_all("project agents")
         out = p.ok("agents")
         rows = {ln.split()[0]: ln.split() for ln in out.splitlines()[1:] if ln.strip()}
-        self.assertEqual(rows["backend"][1:5], ["executor", "да", "config", "sonnet"])
-        self.assertEqual(rows["fixer"][1:4], ["executor", "нет", "project"])
-        self.assertEqual(rows["dp-writer"][1:4], ["status", "нет", "config"])
+        self.assertEqual(rows["backend"][1:5], ["executor", "yes", "config", "sonnet"])
+        self.assertEqual(rows["fixer"][1:4], ["executor", "no", "project"])
+        self.assertEqual(rows["dp-writer"][1:4], ["status", "no", "config"])
         self.assertEqual(rows["dp-engineer"][3], "dpcli")
         p.ok("module", "new", "aa", "--code", "AA")
-        # агенты читаются от корня текущей копии: модуль-копия получила их из коммита
+        # agents are read from the current copy root: the module copy got them from the commit
         p.ok("task", "new", "aa", "--type", "backend", "--title", "T", "--no-copy")
         code, _, err = p.run("task", "new", "aa", "--type", "dp-writer", "--title", "T", "--no-copy")
         self.assertNotEqual(code, 0)
-        self.assertIn("не исполнитель", err)
+        self.assertIn("not an executor", err)
 
 
 class BriefAndCopy(unittest.TestCase):
@@ -76,51 +76,51 @@ class BriefAndCopy(unittest.TestCase):
         self.p.ok("module", "new", "aa", "--code", "AA")
 
     def new(self, *extra):
-        return self.p.ok("task", "new", "aa", "--type", "dp-engineer", "--title", "Сделать X", *extra)
+        return self.p.ok("task", "new", "aa", "--type", "dp-engineer", "--title", "Do X", *extra)
 
     def test_brief_refuses_incomplete(self):
         out = self.new("--no-copy")
-        self.assertIn("brief откажет", out)
+        self.assertIn("brief will refuse", out)
         code, _, err = self.p.run("task", "brief", "AA-1")
         self.assertEqual(code, 1)
         for k in ("goal", "scope", "accept"):
             self.assertIn(k, err)
 
     def test_brief_format(self):
-        self.new("--goal", "цель", "--scope", "src/", "--dont-touch", "docs/contracts/", "--plan-ref", "§2",
+        self.new("--goal", "goal", "--scope", "src/", "--dont-touch", "docs/contracts/", "--plan-ref", "§2",
                  "--check", "c", "true", "exit=0")
         out = self.p.ok("task", "brief", "AA-1")
         L = out.strip().splitlines()
         self.assertEqual(len(L), 6, out)
-        self.assertEqual(L[0], "AA-1 dp-engineer: Сделать X")
-        self.assertTrue(L[1].startswith("Копия: ") and "ветка: aa/AA-1 (от feature/aa)" in L[1])
-        self.assertEqual(L[2], "Делать: .dpcli/dpcli task show AA-1  · план: .dpcli/dpcli plan aa §2")
-        self.assertEqual(L[3], "Границы: только src/; не трогать docs/contracts/")
-        self.assertTrue(L[4].startswith("Готово, когда: .dpcli/dpcli accept AA-1 --dry → PASS"))
-        self.assertTrue(L[5].startswith("Ответ: одна строка «AA-1 reported»"))
+        self.assertEqual(L[0], "AA-1 dp-engineer: Do X")
+        self.assertTrue(L[1].startswith("Copy: ") and "branch: aa/AA-1 (from feature/aa)" in L[1])
+        self.assertEqual(L[2], "Do: .dpcli/dpcli task show AA-1  · plan: .dpcli/dpcli plan aa §2")
+        self.assertEqual(L[3], "Bounds: only src/; do not touch docs/contracts/")
+        self.assertTrue(L[4].startswith("Done when: .dpcli/dpcli accept AA-1 --dry → PASS"))
+        self.assertTrue(L[5].startswith('Reply: one line "AA-1 reported"'))
         for ln in L:
-            self.assertLessEqual(len(ln), 140, ln)  # формат строки «Готово, когда» задан — ~138
+            self.assertLessEqual(len(ln), 140, ln)  # the "Done when" line format is fixed: ~138
         rv = self.p.ok("task", "brief", "AA-1", "--review")
-        self.assertTrue(rv.startswith("Ревью AA-1: копия "))
+        self.assertTrue(rv.startswith("Review AA-1: copy "))
         self.assertIn(".dpcli/dpcli review AA-1 --verdict accept|rework --from r.json", rv)
-        self.assertIn("«AA-1 review accept|rework <n>»", rv)
+        self.assertIn('"AA-1 review accept|rework <n>"', rv)
 
     def test_brief_long_scope_fits(self):
         args = []
         for i in range(30):
             args += ["--scope", f"src/very/long/path/module_{i}.py"]
         self.new("--goal", "g", "--check", "c", "true", "exit=0", "--no-copy", *args)
-        line = [ln for ln in self.p.ok("task", "brief", "AA-1").splitlines() if ln.startswith("Границы")][0]
+        line = [ln for ln in self.p.ok("task", "brief", "AA-1").splitlines() if ln.startswith("Bounds")][0]
         self.assertLessEqual(len(line), 125)
         self.assertIn("task show", line)
 
     def test_task_new_creates_copy(self):
         out = self.new()
         tc = self.p.copies / "proj" / "aa-AA-1"
-        self.assertIn("копия", out)
+        self.assertIn("copy", out)
         self.assertEqual(git("rev-parse", "--abbrev-ref", "HEAD", cwd=tc), "aa/AA-1")
-        # повтор (--force) — переиспользует копию
-        self.assertIn("уже есть", self.p.ok("task", "new", "aa", "AA-1", "--type", "dp-engineer", "--force"))
+        # repeat (--force) reuses the copy
+        self.assertIn("already exists", self.p.ok("task", "new", "aa", "AA-1", "--type", "dp-engineer", "--force"))
         self.new("--no-copy")
         self.assertFalse((self.p.copies / "proj" / "aa-AA-2").exists())
 
@@ -144,7 +144,7 @@ class ScopeCheck(unittest.TestCase):
             self.p.commit_all(path, cwd=tc)
 
     def test_in_scope_pass(self):
-        tid, tc = self.task("--scope", "src/ — код модуля", "--scope", "*.md")
+        tid, tc = self.task("--scope", "src/ — module code", "--scope", "*.md")
         self.write(tc, "src/a.py")
         self.write(tc, "NOTES.md", commit=False)
         code, out, _ = self.p.run("accept", tid)
@@ -170,7 +170,7 @@ class ScopeCheck(unittest.TestCase):
         self.write(tc, "src/api/x.py")
         code, out, _ = self.p.run("accept", tid, "--dry")
         self.assertEqual(code, 1)
-        self.assertIn("в dont_touch: src/api/x.py", out)
+        self.assertIn("in dont_touch: src/api/x.py", out)
 
     def test_empty_scope_skipped(self):
         tid, tc = self.task()

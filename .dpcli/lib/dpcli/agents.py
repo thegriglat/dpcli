@@ -1,11 +1,11 @@
-"""Реестр агентов dpcli: роли (coordinator | executor | reviewer | status) и нужен ли ревьюер после PASS.
+"""dpcli agent registry: roles (coordinator | executor | reviewer | status) and whether a reviewer is needed after PASS.
 
-Источники (каждый следующий перекрывает предыдущий):
+Sources (each next one overrides the previous):
   1. dpcli   — `<agents_dir>/*.md` (frontmatter: name, dpcli_role, dpcli_review, model, …);
-  2. project — `.claude/agents/*.md`, созданные не `dpcli init` (нет в манифесте): с dpcli_role — со своей ролью;
-               без dpcli_role — без роли (агент проекта с тем же именем, что у агента dpcli, перекрывает его);
-  3. config  — ключ `roles: {имя: {role, review}}` (подключить своих агентов, не меняя их файлы).
-Нет ни одного агента с ролью — встроенные умолчания (DEFAULT_AGENTS).
+  2. project — `.claude/agents/*.md` not created by `dpcli init` (not in the manifest): with dpcli_role — that role;
+               without dpcli_role — no role (a project agent with the same name as a dpcli agent overrides it);
+  3. config  — key `roles: {name: {role, review}}` (plug in your own agents without editing their files).
+No agent with a role at all: built-in defaults (DEFAULT_AGENTS).
 """
 import json
 import sys
@@ -38,7 +38,7 @@ def agents_dir():
 
 def _bool(v):
     if isinstance(v, str):
-        return v.strip().lower() in ("true", "yes", "1", "да")
+        return v.strip().lower() in ("true", "yes", "1", "да")  # "да" = Russian "yes" (user-written frontmatter)
     return bool(v)
 
 
@@ -50,7 +50,7 @@ def _read(f):
     try:
         meta, _ = yamlmini.frontmatter(f.read_text(encoding="utf-8"))
     except (OSError, yamlmini.YamlError) as e:
-        _warn(f"{f}: frontmatter не разобран ({e}) — пропущен")
+        _warn(f"{f}: frontmatter parse error ({e}); skipped")
         return None
     return meta or {}
 
@@ -58,14 +58,14 @@ def _read(f):
 def _entry(meta, f, source):
     role = meta.get("dpcli_role")
     if role is not None and role not in ROLES:
-        _warn(f"{f}: dpcli_role «{role}» не из {', '.join(ROLES)}")
+        _warn(f"{f}: dpcli_role \"{role}\" not in {', '.join(ROLES)}")
     info = {k: v for k, v in meta.items() if k not in ("name", "dpcli_role", "dpcli_review")}
     info.update({"role": role, "review": _bool(meta.get("dpcli_review", False)), "file": str(f), "source": source})
     return info
 
 
 def _project_files():
-    """.claude/agents/*.md, которых нет в манифесте init (т.е. файлы проекта)."""
+    """.claude/agents/*.md not in the init manifest (i.e. project files)."""
     try:
         root = config.repo_path(".")
     except DpError:
@@ -81,7 +81,7 @@ def _project_files():
 
 
 def load_agents():
-    """{имя: {role, review, model, description, file, source, …}}; кэш на процесс."""
+    """{name: {role, review, model, description, file, source, …}}; cached per process."""
     global _AGENTS
     if _AGENTS is not None:
         return _AGENTS
@@ -98,17 +98,17 @@ def load_agents():
         out[str(meta.get("name") or f.stem)] = _entry(meta, f, "project")
     roles = config.get("roles") or {}
     if not isinstance(roles, dict):
-        _warn("roles в конфиге: ожидался словарь имя_агента → {role, review}")
+        _warn("roles in config: expected a mapping agent_name → {role, review}")
         roles = {}
     for name, v in roles.items():
         if isinstance(v, str):
             v = {"role": v}
         if not isinstance(v, dict):
-            _warn(f"roles.{name}: ожидалось {{role, review}}")
+            _warn(f"roles.{name}: expected {{role, review}}")
             continue
         role = v.get("role")
         if role not in ROLES:
-            _warn(f"roles.{name}: role «{role}» не из {', '.join(ROLES)}")
+            _warn(f"roles.{name}: role \"{role}\" not in {', '.join(ROLES)}")
         e = out.setdefault(str(name), {"file": ""})
         e.update({"role": role, "source": "config"})
         if "review" in v:
@@ -130,4 +130,4 @@ def needs_review(typ):
 
 
 def reviewer_name():
-    return next((n for n, a in load_agents().items() if a.get("role") == "reviewer"), "ревьюер")
+    return next((n for n, a in load_agents().items() if a.get("role") == "reviewer"), "reviewer")

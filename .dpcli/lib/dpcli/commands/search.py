@@ -1,4 +1,4 @@
-"""search (по журналам), search --sem и index (смысловой индекс через Ollama)."""
+"""search (over journals), search --sem and index (semantic index via Ollama)."""
 import json
 import os
 import re
@@ -12,7 +12,7 @@ from ..util import CLI, DpError, read_json, read_jsonl
 
 
 def cmd_search(a):
-    """Поиск по карточкам, отчётам, событиям и решениям всех модулей: строка на находку."""
+    """Search cards, reports, events and decisions of all modules: one line per hit."""
     if a.sem:
         a.max = a.max or 10
         return sem_search(a)
@@ -26,7 +26,7 @@ def cmd_search(a):
     def scan(mod, tid, typ, t, text, src=None, unparsed=None):
         text = " ".join(str(text).split())
         m = rx.search(text)
-        if not m and tid and rx.search(str(tid)):  # поиск по ID задачи
+        if not m and tid and rx.search(str(tid)):  # match on task ID
             m = re.match("", text)
         if m:
             lo, hi = max(0, m.start() - 70), min(len(text), m.end() + 90)
@@ -57,9 +57,9 @@ def cmd_search(a):
     for d, mod, tid, typ, frag in hits[: a.max]:
         print(f"{mod} {tid} {typ} {d} — {frag}")
     if len(hits) > a.max:
-        print(f"… ещё {len(hits) - a.max} (--max N, --module М)")
+        print(f"… {len(hits) - a.max} more (--max N, --module M)")
     if not hits:
-        print("ничего не найдено")
+        print("nothing found")
 
 
 # ---------------------------------------------------------------- sem (index / search --sem)
@@ -69,7 +69,7 @@ SEM_BATCH = 32
 
 
 def sem_chunks(path, rel, text):
-    """Нарезка markdown по заголовкам, кусок ≤ ~SEM_CHUNK символов с перекрытием."""
+    """Split markdown by headings into chunks of <= ~SEM_CHUNK chars with overlap."""
     lines = text.splitlines()
     secs, cur, title, start = [], [], rel, 1
     for i, ln in enumerate(lines, 1):
@@ -162,20 +162,20 @@ def sem_enabled():
 
 def require_sem():
     if not sem_enabled():
-        raise DpError("смысловой поиск выключен: sem.enabled: true в конфиге и Ollama с моделью "
-                      f"(ollama pull {sem_model()}); обычный поиск — {CLI} search без --sem")
+        raise DpError("semantic search disabled: needs sem.enabled: true in config and Ollama with the model "
+                      f"(ollama pull {sem_model()}); plain search: {CLI} search without --sem")
 
 
 def ollama_embed(texts):
     import urllib.request
     body = json.dumps({"model": sem_model(), "input": texts, "truncate": True, "keep_alive": "2m"}
-                      | ({"options": {"num_gpu": 0}} if os.environ.get("DPCLI_SEM_CPU") else {})).encode()  # DPCLI_SEM_CPU=1 — только CPU
+                      | ({"options": {"num_gpu": 0}} if os.environ.get("DPCLI_SEM_CPU") else {})).encode()  # DPCLI_SEM_CPU=1 — CPU only
     try:
         req = urllib.request.Request(sem_url("/api/embed"), body, {"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=600) as r:
             return json.loads(r.read())["embeddings"]
     except Exception as e:
-        raise DpError(f"Ollama не запущен / нет модели: ollama pull {sem_model()} ({sem_url('')})") from e
+        raise DpError(f"Ollama not running / no model: ollama pull {sem_model()} ({sem_url('')})") from e
 
 
 def sem_norm(v):
@@ -184,15 +184,15 @@ def sem_norm(v):
 
 
 def sem_sync(quiet=False):
-    """Привести общий индекс к корпусу (по хешу текста куска). -> (meta, rows, embedded, removed, dir, dim)."""
+    """Sync the shared index with the corpus (by chunk text hash). -> (meta, rows, embedded, removed, dir, dim)."""
     import fcntl
     import hashlib
     import struct
     idx = sem_dir()
     idx.mkdir(parents=True, exist_ok=True)
-    corpus = list({c["id"]: c for c in sem_corpus()}.values())  # id уникален
+    corpus = list({c["id"]: c for c in sem_corpus()}.values())  # id is unique
     lock = open(idx / ".lock", "w")
-    fcntl.flock(lock, fcntl.LOCK_EX)  # вторая индексация ждёт первую
+    fcntl.flock(lock, fcntl.LOCK_EX)  # a second indexing run waits for the first
     try:
         old = {}
         info = read_json(idx / "info.json") or {}
@@ -226,14 +226,14 @@ def sem_sync(quiet=False):
                     dim = len(v)
                 rows[i] = struct.pack(f"{dim}e", *sem_norm(v))
             if not quiet:
-                print(f"\rиндекс: {min(s0 + SEM_BATCH, len(todo))}/{len(todo)} кусков, {time.time() - t0:.0f} с",
+                print(f"\rindex: {min(s0 + SEM_BATCH, len(todo))}/{len(todo)} chunks, {time.time() - t0:.0f} s",
                       end="", file=sys.stderr, flush=True)
         if todo and not quiet:
             print(file=sys.stderr)
         for m in new_meta:
             m.pop("_t")
         if todo or removed or not old:
-            # атомарная замена: читающий поиск видит либо старую, либо новую версию
+            # atomic replace: a concurrent search sees either the old or the new version
             for name, data in (("emb.f16", b"".join(rows)),
                                ("meta.jsonl", "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in new_meta).encode()),
                                ("info.json", json.dumps({"model": sem_model(), "dim": dim}).encode())):
@@ -247,20 +247,20 @@ def sem_sync(quiet=False):
 
 
 def sem_index_bg():
-    """После слияния в главную ветку: index отвязанным процессом (лог index.log); без Ollama — предупреждение."""
+    """After a merge into the main branch: run index as a detached process (log index.log); no Ollama -> warning."""
     import urllib.request
     if not sem_enabled():
         return ""
     try:
         urllib.request.urlopen(sem_url("/api/tags"), timeout=2).read()
     except Exception:
-        return "индекс не обновлён: Ollama не запущен"
+        return "index not updated: Ollama not running"
     idx = sem_dir()
     idx.mkdir(parents=True, exist_ok=True)
     log = open(idx / "index.log", "w")
     subprocess.Popen([*reexec.self_cmd(), "index"], cwd=gitx.common_root(), stdout=log, stderr=log,
                      stdin=subprocess.DEVNULL, start_new_session=True)
-    return "индекс обновляется в фоне"
+    return "index updating in background"
 
 
 def cmd_index(a):
@@ -271,7 +271,7 @@ def cmd_index(a):
             (sem_dir() / n).unlink(missing_ok=True)
     meta, rows, n, rm, idx, _ = sem_sync()
     size = sum(p.stat().st_size for p in idx.glob("*") if p.is_file()) / 1e6
-    print(f"индекс {idx}: кусков {len(meta)}, пересчитано {n}, убрано {rm}, {size:.1f} МБ, {time.time() - t0:.0f} с")
+    print(f"index {idx}: chunks {len(meta)}, re-embedded {n}, removed {rm}, {size:.1f} MB, {time.time() - t0:.0f} s")
 
 
 def sem_search(a):
@@ -296,18 +296,18 @@ def sem_search(a):
         st = f" [{h['status']}]" if h.get("status") else ""
         print(f"{sc:.2f} {h['path']}:{h['line']}{st} — {h['title']} — {sn}")
     if not res:
-        print("ничего не найдено")
-    print(f"({time.time() - t0:.0f} с, обновлено кусков: {n})")
+        print("nothing found")
+    print(f"({time.time() - t0:.0f} s, chunks updated: {n})")
 
 
 def register(sp):
-    q = sp.add_parser("search", help="поиск по карточкам, отчётам, событиям, решениям всех модулей (прошлые работы)")
-    q.add_argument("pattern", metavar="текст|regex"); q.add_argument("--module"); q.add_argument("--max", type=int, default=None)
-    q.add_argument("--sem", action="store_true", help=f"по смыслу (опционально: sem.enabled, Ollama; нужен {CLI} index); --max по умолчанию 10")
-    q.add_argument("--path", help="с --sem: префикс пути")
-    q.add_argument("--all", action="store_true", help="с --sem: и <docs_dir>/archive/**, и документы status: superseded|closed")
+    q = sp.add_parser("search", help="search cards, reports, events, decisions of all modules (past work)")
+    q.add_argument("pattern", metavar="text|regex"); q.add_argument("--module"); q.add_argument("--max", type=int, default=None)
+    q.add_argument("--sem", action="store_true", help=f"semantic (optional: sem.enabled, Ollama; needs {CLI} index); --max defaults to 10")
+    q.add_argument("--path", help="with --sem: path prefix")
+    q.add_argument("--all", action="store_true", help="with --sem: include <docs_dir>/archive/** and status: superseded|closed docs")
     q.set_defaults(func=cmd_search)
 
-    q = sp.add_parser("index", help="смысловой индекс проекта для search --sem (вне git, sem.cache_dir)")
-    q.add_argument("--full", action="store_true", help="пересчитать всё")
+    q = sp.add_parser("index", help="semantic project index for search --sem (outside git, sem.cache_dir)")
+    q.add_argument("--full", action="store_true", help="rebuild everything")
     q.set_defaults(func=cmd_index)

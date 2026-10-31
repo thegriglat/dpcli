@@ -1,29 +1,29 @@
 ---
 name: start-to-do
-description: Запуск задачи (пункта плана) координатором модуля {{project}} — проверить контракты, завести карточку (копия и ветка создаются сами), выдать исполнителю `task brief`, записать в журнал. Использовать координатору (dp-coordinator) перед запуском каждого исполнителя.
+description: Start a task (plan item) by the {{project}} module coordinator — check contracts, create the card (copy and branch are created automatically), hand the executor the `task brief`, record it in the journal. For the coordinator (dp-coordinator) before launching each executor.
 ---
 
-# start-to-do — запуск задачи
+# start-to-do — start a task
 
-Аргумент: задача из плана модуля (`<ID>` или раздел).
+Argument: a task from the module plan (`<ID>` or section).
 
-1. **Контракты.** `{{cli}} plan <м> <раздел>` — скоуп, файлы, приёмка, зависимости. Стыки — `{{cli}} plan <м> --contracts <имя>`: нет контракта для нового стыка — сначала описать (версия, контрактный тест). Зависимость не готова и подставных данных нет — не запускать.
-2. **Карточка** (создаёт копию и ветку `<м>/<ID>` от `{{module_branch}}`):
+1. **Contracts.** `{{cli}} plan <m> <section>` — scope, files, acceptance, dependencies. Seams — `{{cli}} plan <m> --contracts <name>`: no contract for a new seam — describe it first (version, contract test). Dependency not ready and no stub data — don't start.
+2. **Card** (creates copy and branch `<m>/<ID>` from `{{module_branch}}`):
    ```
-   {{cli}} task new <м> [ID] --type <тип> --title "…" --goal "1–2 фразы" --plan-ref "<раздел>" \
-     --scope <путь> --dont-touch <путь> --contract <имя>@<версия> \
-     --test <фильтр> --check <имя> "<cmd>" "<exit=0|re:…|num:(…) <=X>"
+   {{cli}} task new <m> [ID] --type <type> --title "…" --goal "1–2 sentences" --plan-ref "<section>" \
+     --scope <path> --dont-touch <path> --contract <name>@<version> \
+     --test <filter> --check <name> "<cmd>" "<exit=0|re:…|num:(…) <=X>"
    ```
-   Как делать, если неочевидно (файлы, функции, формат, замок GPU/CPU, где данные), — `{{cli}} task note <ID> "…"`. Исполнителю не должно понадобиться ничего искать.
-3. **Задание.** `{{cli}} task brief <ID>` — отказ значит, что карточка неполна: дописать (`task set`/`task note`).
-4. **Запуск.** Агент типа карточки (`--type`), сообщение — вывод `brief` как есть, без добавлений. Модель — sonnet (`dp-mechanic` — haiku); opus — только если проектирование нельзя вынести в карточку/контракт.
-5. **Журнал.** `{{cli}} event <ID> started`.
+   How to do it, if not obvious (files, functions, format, GPU/CPU lock, where data is), — `{{cli}} task note <ID> "…"`. The executor should not need to look anything up.
+3. **Brief.** `{{cli}} task brief <ID>` — a refusal means the card is incomplete: fill it in (`task set`/`task note`).
+4. **Launch.** Agent of the card type (`--type`), message — `brief` output as is, nothing added. Model — sonnet (`dp-mechanic` — haiku); opus — only if design can't be moved into the card/contract.
+5. **Journal.** `{{cli}} event <ID> started`.
 
-| Работа | Тип |
+| Work | Type |
 |---|---|
-| код и тесты | `dp-engineer` |
-| прототип, замеры, литература | `dp-researcher` |
-| документы | `dp-writer` |
-| замены по шаблону, прогоны | `dp-mechanic` |
+| code and tests | `dp-engineer` |
+| prototype, measurements, literature | `dp-researcher` |
+| documents | `dp-writer` |
+| pattern replacements, runs | `dp-mechanic` |
 
-Свои типы — `{{cli}} agents`. Приёмка — {{workflow}}, «Приёмка».
+Custom types — `{{cli}} agents`. Acceptance — {{workflow}}, "Acceptance".

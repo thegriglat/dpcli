@@ -1,4 +1,4 @@
-"""accept: прогон проверок карточки (в т.ч. в фоне через job)."""
+"""accept: run card checks (also in background via job)."""
 import concurrent.futures as cf
 import fnmatch
 import os
@@ -35,24 +35,26 @@ def parse_expect(exp):
         body, _, cond = s[4:].rpartition(" ")
         m = re.fullmatch(r"(>=|<=|==|<|>)(-?[\d.eE+-]+)", cond)
         if not m:
-            raise DpError(f"expect «{s}»: ожидалось 'num:<regex> <op><число>'")
+            raise DpError(f"expect \"{s}\": expected 'num:<regex> <op><number>'")
         key = {">=": "min", "<=": "max", "==": "eq", ">": "gt", "<": "lt"}[m[1]]
         return {"num": body, key: float(m[2])}
-    raise DpError(f"expect «{s}»: не понял (exit=N | re:… | !re:… | num:<regex> <op>N | tests)")
+    raise DpError(f"expect \"{s}\": not understood (exit=N | re:… | !re:… | num:<regex> <op>N | tests)")
 
 
-TESTS_SUMMARY = r"(?P<total>\d+) тестов, (?P<failed>\d+) упало(?:, (?P<skipped>\d+) пропущено)?"
+# default runner summary: "N tests, M failed[, K skipped]" (Russian wording also accepted)
+TESTS_SUMMARY = (r"(?P<total>\d+) (?:tests?|тестов), (?P<failed>\d+) (?:failed|упало)"
+                 r"(?:, (?P<skipped>\d+) (?:skipped|пропущено))?")
 
 
 def tests_summary_rx():
-    """Регэксп итога прогона тестов: checks.tests_summary (группы total, failed; skipped — по желанию)."""
+    """Regex for the test run summary: checks.tests_summary (groups total, failed; skipped optional)."""
     src = config.get("checks.tests_summary") or TESTS_SUMMARY
     try:
         rx = re.compile(src, re.M)
     except re.error as e:
-        raise DpError(f"checks.tests_summary «{src}»: неверный регэксп ({e})")
+        raise DpError(f"checks.tests_summary \"{src}\": invalid regex ({e})")
     if not {"total", "failed"} <= set(rx.groupindex):
-        raise DpError(f"checks.tests_summary «{src}»: нужны группы (?P<total>…) и (?P<failed>…)")
+        raise DpError(f"checks.tests_summary \"{src}\": groups (?P<total>…) and (?P<failed>…) required")
     return rx
 
 
@@ -68,32 +70,32 @@ def judge(exp, code, out):
             g = m[-1].groupdict()
             tot, fail, skip = (int(g.get(k) or 0) for k in ("total", "failed", "skipped"))
             ok &= fail == 0 and tot > 0
-            vals.append(f"{tot - fail}/{tot}" + (f" (пропуск {skip})" if skip else ""))
+            vals.append(f"{tot - fail}/{tot}" + (f" (skipped {skip})" if skip else ""))
             if fail:
                 names = re.findall(r"^\s*FAIL (\S+)", out, re.M)
                 vals.append("FAIL " + ",".join(n.split("::")[-1] for n in names[:3]))
-        else:  # итог (checks.tests_summary) не напечатан — судим по коду выхода раннера
+        else:  # no summary (checks.tests_summary) printed: judge by the runner exit code
             ok &= code == 0
             if "exit" not in exp:
                 vals.append(f"exit {code}")
     if exp.get("re"):
         m = re.search(exp["re"], out, re.M)
         ok &= bool(m)
-        vals.append(short(m[0], 40) if m else "нет совпадения")
+        vals.append(short(m[0], 40) if m else "no match")
     if exp.get("not_re"):
         m = re.search(exp["not_re"], out, re.M)
         ok &= not m
         if m:
-            vals.append("есть: " + short(m[0], 40))
+            vals.append("found: " + short(m[0], 40))
     if exp.get("num"):
         m = list(re.finditer(exp["num"], out, re.M))
         if not m:
-            return False, "число не найдено"
+            return False, "number not found"
         g = m[-1]
         try:
             v = float((g.group(1) if g.groups() else g.group(0)).replace(",", "."))
         except ValueError:
-            return False, f"не число: {short(g[0], 30)}"
+            return False, f"not a number: {short(g[0], 30)}"
         for k, f in (("min", lambda x, y: x >= y), ("max", lambda x, y: x <= y), ("eq", lambda x, y: abs(x - y) < 1e-12),
                      ("gt", lambda x, y: x > y), ("lt", lambda x, y: x < y)):
             if k in exp:
@@ -103,7 +105,7 @@ def judge(exp, code, out):
 
 
 def check_env(tid):
-    """Окружение проверки: DPCLI_TASK + checks.env ({tmpdir} — свежий временный каталог на проверку)."""
+    """Check environment: DPCLI_TASK + checks.env ({tmpdir}: a fresh temp dir per check)."""
     env = dict(os.environ, DPCLI_TASK=tid)
     tmp = None
     for k, v in (config.get("checks.env") or {}).items():
@@ -120,10 +122,10 @@ def run_check(c, cwd, logdir, idx, tid):
     if not cmd and c.get("tests"):
         tpl = config.get("checks.tests")
         if not tpl:
-            return name, False, "проверка tests недоступна: нет шаблона checks.tests в конфиге", "", 0
+            return name, False, "tests check unavailable: no checks.tests template in config", "", 0
         cmd = str(tpl).replace("{filter}", str(c["tests"]))
     if not cmd:
-        return name, False, "нет cmd", "", 0
+        return name, False, "no cmd", "", 0
     exp = parse_expect({"tests": True} if c.get("tests") and "expect" not in c else c.get("expect"))
     wd = Path(os.path.expanduser(c.get("cwd") or cwd))
     if not wd.is_absolute():
@@ -138,10 +140,10 @@ def run_check(c, cwd, logdir, idx, tid):
         code, out = r.returncode, r.stdout + ("\n" + r.stderr if r.stderr else "")
     except subprocess.TimeoutExpired as e:
         code, out = 124, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        out += f"\n[dpcli] таймаут {c.get('timeout', 900)} с"
+        out += f"\n[dpcli] timeout {c.get('timeout', 900)} s"
     dur = time.time() - t0
-    log.write_text(f"$ cd {wd}\n$ {cmd}\n[exit {code}, {dur:.0f} с]\n\n{out}")
-    ok, val = judge(exp, code, out) if code != 124 else (False, "таймаут")
+    log.write_text(f"$ cd {wd}\n$ {cmd}\n[exit {code}, {dur:.0f} s]\n\n{out}")
+    ok, val = judge(exp, code, out) if code != 124 else (False, "timeout")
     if not ok and "exit" in val and len(val) < 12:
         tail = [x for x in out.strip().splitlines() if x.strip()][-1:] or [""]
         val += " · " + short(tail[0], 60)
@@ -152,9 +154,9 @@ _NOTE = re.compile(r"\s+(?:—|–|-|\(|:)(?:\s|$)")
 
 
 def _pat(entry):
-    """Шаблоны из пункта scope: путь/glob. Путь может содержать пробелы («docs/Мои заметки/Контракт.md»), а после него —
-    пояснение («src/x.py — функция f»): берём текст в обратных кавычках, иначе всё до « — »/« - »/« (»/«: »;
-    если пояснения нет, годится и вся строка, и её первое слово (прежнее поведение). → список шаблонов."""
+    """Patterns from a scope item: path/glob. The path may contain spaces ("docs/My notes/Contract.md") and be followed by
+    a note ("src/x.py — function f"): take the backticked text, else everything before " — "/" - "/" ("/": ";
+    with no note, both the whole line and its first word match (old behavior). → list of patterns."""
     e = str(entry).strip()
     q = re.match(r"^`([^`]+)`", e)
     if q:
@@ -166,7 +168,7 @@ def _pat(entry):
 
 
 def path_in(path, pats):
-    """Путь попадает в один из шаблонов: glob (* ? [, ** — любые каталоги) или файл/префикс каталога."""
+    """Path matches one of the patterns: glob (* ? [, ** = any dirs) or file/dir prefix."""
     for pat in pats:
         if not pat:
             continue
@@ -181,7 +183,7 @@ def path_in(path, pats):
 
 
 def changed_files(cwd, base):
-    """Изменённые в ветке относительно base (base...HEAD) + незакоммиченные (вкл. неотслеживаемые)."""
+    """Files changed in the branch vs base (base...HEAD) + uncommitted (incl. untracked)."""
     r = gitx.gitr("-c", "core.quotepath=off", "diff", "--name-only", "-z", f"{base}...HEAD", cwd=cwd)
     if r.returncode:
         raise DpError(f"git diff {base}...HEAD: {gitx.gerr(r)}")
@@ -191,14 +193,14 @@ def changed_files(cwd, base):
 
 
 def scope_check(card, cwd, mod):
-    """(ok | None — пропущено, значение): изменённые файлы ветки задачи ⊂ scope и ∩ dont_touch = ∅."""
+    """(ok | None if skipped, value): changed files of the task branch ⊂ scope and ∩ dont_touch = ∅."""
     scope = [p for x in card.get("scope") or [] for p in _pat(x)]
     if not any(scope):
-        return None, "пропущено: пустой scope"
+        return None, "skipped: empty scope"
     br, base = card.get("branch"), card.get("base") or config.module_branch(mod)
     cur = gitx.git("branch", "--show-current", cwd=cwd)
     if br and cur != br:
-        return None, f"пропущено: {rel(cwd)} не на ветке задачи {br}"
+        return None, f"skipped: {rel(cwd)} not on task branch {br}"
     try:
         files = changed_files(cwd, base)
     except DpError as e:
@@ -206,7 +208,7 @@ def scope_check(card, cwd, mod):
     skip = [f"{config.plan_dir()}/{mod}/", str(config.get("checks.log_dir") or "build/dpcli")]
     skip += [str(d) for d in config.get("gc.ignore_dirs") or []]
     hp = copies.hooks_dir(cwd)
-    skip += [hp] if hp else []  # каталог хуков (.husky/_) — подготовка копии, не работа задачи
+    skip += [hp] if hp else []  # hooks dir (.husky/_) is copy setup, not task work
     globs = [str(g) for g in config.get("gc.ignore_globs") or []]
     files = [f for f in files if not path_in(f, skip) and not any(fnmatch.fnmatch(f.rsplit("/", 1)[-1], g) for g in globs)
              and not any(f"/{d}/" in f"/{f}" for d in config.get("gc.ignore_dirs") or [])]
@@ -214,17 +216,17 @@ def scope_check(card, cwd, mod):
     out = [f for f in files if not path_in(f, scope)]
     bad = [f for f in files if path_in(f, dont)]
     if not out and not bad:
-        return True, f"{len(files)} файл(ов) в границах"
+        return True, f"{len(files)} file(s) in bounds"
     parts = []
     if out:
-        parts.append("вне scope: " + ", ".join(out[:10]) + (f" … (+{len(out) - 10})" if len(out) > 10 else ""))
+        parts.append("outside scope: " + ", ".join(out[:10]) + (f" … (+{len(out) - 10})" if len(out) > 10 else ""))
     if bad:
-        parts.append("в dont_touch: " + ", ".join(bad[:10]) + (f" … (+{len(bad) - 10})" if len(bad) > 10 else ""))
+        parts.append("in dont_touch: " + ", ".join(bad[:10]) + (f" … (+{len(bad) - 10})" if len(bad) > 10 else ""))
     return False, "; ".join(parts)
 
 
 def accept_bg(a, cwd, logdir):
-    """Фоновый прогон (долгие проверки) через job; результат — accept тем же процессом, событие пишет он."""
+    """Background run (long checks) via job; the result is accept in that process, which writes the event."""
     skip = {"--bg"}
     argv, it = [], iter(sys.argv[1:])
     for x in it:
@@ -243,7 +245,7 @@ def accept_bg(a, cwd, logdir):
         job_start(name, a.timeout, [*reexec.self_cmd(), *argv, "--cwd", str(cwd)], tmux_opts(a))
     except DpError as e:
         die(str(e))
-    print(f"ждать: {CLI} job wait {name} {a.timeout}; итог — в событиях ({CLI} log {a.id}), логи — {rel(logdir)}")
+    print(f"wait: {CLI} job wait {name} {a.timeout}; result in events ({CLI} log {a.id}), logs: {rel(logdir)}")
     sys.exit(0)
 
 
@@ -252,7 +254,7 @@ def cmd_accept(a):
     card = read_json(home / "tasks" / f"{a.id}.json")
     checks = [c for c in card.get("accept", []) if not a.only or c.get("name") in a.only]
     if not checks:
-        raise DpError(f"{a.id}: нет проверок в карточке" + (f" с именами {a.only}" if a.only else ""))
+        raise DpError(f"{a.id}: no checks in the card" + (f" named {a.only}" if a.only else ""))
     cwd = a.cwd
     if not cwd:
         cp = Path(os.path.expanduser(card.get("copy", ""))) if card.get("copy") else None
@@ -264,9 +266,9 @@ def cmd_accept(a):
     with cf.ThreadPoolExecutor(max_workers=max(1, a.jobs)) as ex:
         def one(ic):
             nm = ic[1].get("name", f"check{ic[0]}")
-            print(f"… {nm}", file=sys.stderr, flush=True)  # прогресс — в stderr, итоговая таблица — в stdout
+            print(f"… {nm}", file=sys.stderr, flush=True)  # progress to stderr, final table to stdout
             r = run_check(ic[1], cwd, logdir, ic[0], a.id)
-            print(f"{'PASS' if r[1] else 'FAIL'} {nm} {r[4]:.0f} с", file=sys.stderr, flush=True)
+            print(f"{'PASS' if r[1] else 'FAIL'} {nm} {r[4]:.0f} s", file=sys.stderr, flush=True)
             return r
         res = list(ex.map(one, enumerate(checks, 1)))
     sc_ok, sc_val = scope_check(card, cwd, mod)
@@ -276,9 +278,9 @@ def cmd_accept(a):
     print(f"{'SKIP' if sc_ok is None else 'PASS' if sc_ok else 'FAIL'} {'scope':<{w}} {sc_val}")
     npass = sum(r[1] for r in res)
     allok = npass == len(res) and sc_ok is not False
-    print(f"{a.id}: {npass}/{len(res)}{'' if sc_ok is not False else ' + FAIL scope'} в {rel(cwd)}"
-          + ("" if allok else "; логи " + rel(logdir)))
-    # сводка по всем проверкам карточки: последний результат каждой (для текущего HEAD копии)
+    print(f"{a.id}: {npass}/{len(res)}{'' if sc_ok is not False else ' + FAIL scope'} in {rel(cwd)}"
+          + ("" if allok else "; logs " + rel(logdir)))
+    # summary over all card checks: latest result of each (for the copy's current HEAD)
     head = gitx.gitr("rev-parse", "--short", "HEAD", cwd=cwd).stdout.strip()
     resf = logdir / "results.json"
     store = read_json(resf) or {}
@@ -289,9 +291,9 @@ def cmd_accept(a):
     cur = {n: store[n] for n in allnames if n in store and store[n].get("head") == head}
     n_ok = sum(1 for v in cur.values() if v["ok"])
     if a.only or len(cur) < len(allnames):
-        gaps = [f"{n}={'FAIL' if n in cur else ('устарело' if n in store else 'не запускалась')}"
+        gaps = [f"{n}={'FAIL' if n in cur else ('stale' if n in store else 'not run')}"
                 for n in allnames if n not in cur or not cur[n]["ok"]]
-        print(f"Сводно по карточке ({head}): {n_ok}/{len(allnames)} PASS" + (f"; нет: {', '.join(gaps)}" if gaps else ""))
+        print(f"Card total ({head}): {n_ok}/{len(allnames)} PASS" + (f"; missing: {', '.join(gaps)}" if gaps else ""))
     if not a.dry:
         summ = "; ".join(f"{n}={'ok' if cur[n]['ok'] else 'FAIL'}:{short(cur[n]['val'], 30)}" for n in cur)
         if sc_ok is False:
@@ -301,22 +303,22 @@ def cmd_accept(a):
         kind = "accepted" if allok and full_set and not a.no_accept and not need_rev else "checked"
         add_event(home, a.id, kind, by_default(a), note=f"{n_ok}/{len(allnames)} {summ}", commits=a.commit)
         if allok and full_set and need_rev:
-            print(f"{a.id}: PASS → ревью: {agents.reviewer_name()} (задание: {CLI} task brief {a.id} --review), вердикт — {CLI} review {a.id}")
+            print(f"{a.id}: PASS → review: {agents.reviewer_name()} (assignment: {CLI} task brief {a.id} --review), verdict: {CLI} review {a.id}")
     sys.exit(0 if allok else 1)
 
 
 def register(sp):
-    q = sp.add_parser("accept", help="прогнать проверки карточки → PASS/FAIL, итог в события")
-    q.add_argument("id"); q.add_argument("--only", action="append", metavar="ИМЯ")
-    q.add_argument("--cwd", help="где запускать (по умолчанию копия задачи, если есть, иначе текущая)")
-    q.add_argument("--here", action="store_true", help="в текущей копии (после слияния в ветку модуля)")
+    q = sp.add_parser("accept", help="run card checks → PASS/FAIL, result to events")
+    q.add_argument("id"); q.add_argument("--only", action="append", metavar="NAME")
+    q.add_argument("--cwd", help="where to run (default: the task copy if present, else the current one)")
+    q.add_argument("--here", action="store_true", help="in the current copy (after merging into the module branch)")
     q.add_argument("-j", "--jobs", type=int, default=1); q.add_argument("--commit", action="append")
-    q.add_argument("--dry", action="store_true", help="не писать событие")
-    q.add_argument("--no-accept", dest="no_accept", action="store_true", help="записать checked, даже если всё PASS")
+    q.add_argument("--dry", action="store_true", help="do not write an event")
+    q.add_argument("--no-accept", dest="no_accept", action="store_true", help="record checked even if all PASS")
     q.add_argument("--no-review", dest="no_review", action="store_true",
-                   help="типы с dpcli_review: accepted без ревью (по умолчанию PASS → checked, ждёт ревьюера)")
-    q.add_argument("--full", action="store_true", help="пути логов и для PASS"); q.add_argument("--by")
-    q.add_argument("--bg", action="store_true", help=f"в фоне через job (долгие проверки); ждать — {CLI} job wait dp-accept-<ID>")
-    q.add_argument("--timeout", type=int, default=3600, metavar="СЕК", help="с --bg: общий таймаут фонового прогона (3600)")
+                   help="types with dpcli_review: accepted without review (default: PASS → checked, awaits reviewer)")
+    q.add_argument("--full", action="store_true", help="log paths for PASS too"); q.add_argument("--by")
+    q.add_argument("--bg", action="store_true", help=f"in background via job (long checks); wait: {CLI} job wait dp-accept-<ID>")
+    q.add_argument("--timeout", type=int, default=3600, metavar="SEC", help="with --bg: overall timeout of the background run (3600)")
     tmux_args(q)
     q.set_defaults(func=cmd_accept)

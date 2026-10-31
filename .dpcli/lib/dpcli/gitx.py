@@ -1,4 +1,4 @@
-"""git: вызовы, toplevel, рабочие копии (worktree), ветки, слияние, коммит своих путей."""
+"""git: calls, toplevel, working copies (worktree), branches, merge, committing own paths."""
 import datetime as dt
 import subprocess
 from pathlib import Path
@@ -29,7 +29,7 @@ def toplevel():
     if _TOP is None:
         t = git("rev-parse", "--show-toplevel")
         if not t:
-            raise DpError("не в рабочей копии git")
+            raise DpError("not in a git working copy")
         _TOP = Path(t)
     return _TOP
 
@@ -38,7 +38,7 @@ _WT = None
 
 
 def worktrees():
-    """[(path, branch)] из git worktree list --porcelain."""
+    """[(path, branch)] from git worktree list --porcelain."""
     global _WT
     if _WT is None:
         _WT, path = [], None
@@ -58,7 +58,7 @@ def reset_worktrees():
 
 
 def main_worktree():
-    """Главная рабочая копия — первая в git worktree list --porcelain; None вне репозитория."""
+    """Main working copy — first in git worktree list --porcelain; None outside a repo."""
     for line in git("worktree", "list", "--porcelain").splitlines():
         if line.startswith("worktree "):
             return Path(line[9:])
@@ -66,7 +66,7 @@ def main_worktree():
 
 
 def common_root():
-    """Главная копия по общему каталогу .git (общий смысловой индекс считается по ней, из любой копии)."""
+    """Main copy via the shared .git dir (the shared semantic index is built from it, from any copy)."""
     cd = git("rev-parse", "--path-format=absolute", "--git-common-dir")
     return Path(cd).parent if cd else toplevel()
 
@@ -87,9 +87,9 @@ def copy_of(branch):
 
 
 def status_entries(path, *flags, pathspec=()):
-    """[(XY, путь)] из `git status --porcelain -z`: пути без кавычек и escape (пробелы, кириллица); у переименования — новый."""
+    """[(XY, path)] from `git status --porcelain -z`: paths unquoted, unescaped (spaces, non-ASCII); renames give the new one."""
     if path and not Path(path).is_dir():
-        return []  # копию уже сняли (gc --remove в том же проходе)
+        return []  # copy already removed (gc --remove in the same pass)
     args = ["-c", "core.quotepath=off", "status", "--porcelain", "-z", *flags] + (["--", *pathspec] if pathspec else [])
     parts = gitr(*args, cwd=path).stdout.split("\0")
     res, i = [], 0
@@ -100,7 +100,7 @@ def status_entries(path, *flags, pathspec=()):
             continue
         res.append((ent[:2], ent[3:]))
         if ent[0] in "RC" or ent[1] in "RC":
-            i += 1  # следом идёт прежнее имя
+            i += 1  # the old name follows
     return res
 
 
@@ -109,7 +109,7 @@ def dirty(path):
 
 
 def commit_paths(cwd, paths, msg):
-    """git add <пути> && git commit -- <пути>; индекс других путей не трогаем. → короткий хеш."""
+    """git add <paths> && git commit -- <paths>; index of other paths untouched. → short hash."""
     r = gitr("add", "--", *map(str, paths), cwd=cwd)
     if r.returncode:
         raise DpError(f"git add: {gerr(r)}")
@@ -121,13 +121,13 @@ def commit_paths(cwd, paths, msg):
 
 
 def do_merge(path, src, msg, ff=True, trailers=None):
-    """merge src в ветку копии path. → (хеш, файлов, 'up-to-date'|'merged'); конфликт → abort + DpError."""
+    """merge src into the branch of copy path. → (hash, files, 'up-to-date'|'merged'); conflict → abort + DpError."""
     from .journal import journal_commit
     jm = journal_commit(path)
     if jm:
-        print(f"журнал dpcli закоммичен в {pretty(path)}: {', '.join(jm)}")
+        print(f"dpcli journal committed in {pretty(path)}: {', '.join(jm)}")
     if dirty(path):
-        raise DpError(f"копия {pretty(path)} грязная (изменения в отслеживаемых файлах) — отказ")
+        raise DpError(f"copy {pretty(path)} is dirty (changes in tracked files) — refused")
     before = gitr("rev-parse", "HEAD", cwd=path).stdout.strip()
     args = (["merge", "--no-edit", "-m", msg] + (["-m", session_line()] if session_line() else [])
             + [x for t in trailers or [] for x in ("-m", t)] + ([] if ff else ["--no-ff"]) + [src])
@@ -136,11 +136,11 @@ def do_merge(path, src, msg, ff=True, trailers=None):
         files = gitr("-c", "core.quotepath=off", "diff", "--name-only", "-z", "--diff-filter=U", cwd=path).stdout.split("\0")
         from .commands.docs import resolve_generated
         if resolve_generated(path, files) and not gitr("commit", "-q", "--no-edit", cwd=path).returncode:
-            print(f"конфликт только в сгенерированных индексах ({', '.join(f for f in files if f)}) — пересобраны (docs index)")
+            print(f"conflict only in generated indexes ({', '.join(f for f in files if f)}) — rebuilt (docs index)")
             r = None
     if r is not None and r.returncode:
         gitr("merge", "--abort", cwd=path)
-        raise DpError(f"конфликт при слиянии {src} в {pretty(path)}, отменено (merge --abort); файлы: {', '.join(f for f in files if f) or gerr(r)}")
+        raise DpError(f"conflict merging {src} into {pretty(path)}, aborted (merge --abort); files: {', '.join(f for f in files if f) or gerr(r)}")
     after = gitr("rev-parse", "HEAD", cwd=path).stdout.strip()
     if after == before:
         return after[:7], 0, "up-to-date"
@@ -149,7 +149,7 @@ def do_merge(path, src, msg, ff=True, trailers=None):
 
 
 def branch_info(br, wt_by_branch):
-    """(копия, «хеш возраст») последнего коммита ветки."""
+    """(copy, "hash age") of the branch's last commit."""
     last = git("log", "-1", "--format=%h %ct", br, "--")
     if not last:
         return wt_by_branch.get(br, ""), ""
@@ -158,7 +158,7 @@ def branch_info(br, wt_by_branch):
 
 
 def branch_last_ts(br, main):
-    """Время последнего коммита ветки, которого нет в главной ветке (datetime) или None."""
+    """Time of the branch's last commit not in main (datetime) or None."""
     out = git("log", "-1", "--format=%ct", br, "--not", main, "--")
     return dt.datetime.fromtimestamp(int(out)) if out.strip().isdigit() else None
 

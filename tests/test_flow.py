@@ -1,4 +1,4 @@
-"""Полный цикл: module new -> task new -> report -> accept -> review -> merge -> gc (последовательные шаги одного проекта)."""
+"""Full cycle: module new -> task new -> report -> accept -> review -> merge -> gc (sequential steps of one project)."""
 import json
 import unittest
 
@@ -6,7 +6,7 @@ from helpers import Project, git
 
 
 def report(checks, status="done"):
-    return json.dumps({"status": status, "summary": "сделано", "commits": ["abc1234 работа"],
+    return json.dumps({"status": status, "summary": "done", "commits": ["abc1234 work"],
                        "checks": [{"name": n, "value": "1", "pass": True} for n in checks]})
 
 
@@ -21,12 +21,12 @@ class Flow(unittest.TestCase):
         cls.p.cleanup()
 
     def mk_task(self, typ, *extra):
-        out = self.p.ok("task", "new", "demo", "--type", typ, "--title", f"Задача {typ}", "--goal", "цель", *extra)
+        out = self.p.ok("task", "new", "demo", "--type", typ, "--title", f"Task {typ}", "--goal", "goal", *extra)
         tid = out.split(":")[0]
-        tc = self.p.copies / "proj" / f"demo-{tid}"  # копию и ветку задачи создаёт task new
+        tc = self.p.copies / "proj" / f"demo-{tid}"  # task new creates the task copy and branch
         self.assertEqual(git("rev-parse", "--abbrev-ref", "HEAD", cwd=tc), f"demo/{tid}")
         (tc / f"{tid}.txt").write_text("x", encoding="utf-8")
-        self.p.commit_all(f"работа {tid}", cwd=tc)
+        self.p.commit_all(f"work {tid}", cwd=tc)
         return tid, tc
 
     def test_full_cycle(self):
@@ -36,15 +36,15 @@ class Flow(unittest.TestCase):
         self.assertIn("feature/demo", out)
         self.assertTrue(self.mc.is_dir())
         self.assertEqual(git("rev-parse", "--abbrev-ref", "HEAD", cwd=self.mc), "feature/demo")
-        self.assertEqual(p.run("module", "new", "demo", "--code", "DM")[0], 1)  # повтор — ошибка
+        self.assertEqual(p.run("module", "new", "demo", "--code", "DM")[0], 1)  # repeat is an error
 
-        # task new с проверками (engineer: review=true; writer: нет)
+        # task new with checks (engineer: review=true; writer: no)
         eng, eng_c = self.mk_task("dp-engineer", "--scope", "*.txt", "--check", "echo", "echo hi", "re:hi",
                                   "--check", "bad", "false", "exit=0")
         wri, wri_c = self.mk_task("dp-writer", "--check", "ok", "true", "exit=0")
         self.assertEqual((eng, wri), ("DM-1", "DM-2"))
         show = p.ok("task", "show", eng)
-        for s in (eng, "Задача dp-engineer", "echo", "bad", "demo/DM-1"):
+        for s in (eng, "Task dp-engineer", "echo", "bad", "demo/DM-1"):
             self.assertIn(s, show)
         self.assertEqual(json.loads(p.ok("task", "show", eng, "--json"))["accept"][0]["name"], "echo")
 
@@ -52,21 +52,21 @@ class Flow(unittest.TestCase):
         p.ok("event", eng, "started")
         self.assertIn("started", p.ok("log", eng))
 
-        # report: невалидные отклоняются, валидный принимается; шаблон
+        # report: invalid ones rejected, valid accepted; template
         tpl = json.loads(p.ok("report", "--template"))
         self.assertEqual(set(tpl) >= {"status", "summary", "commits", "checks"}, True)
-        for bad in ('{"status": "wat"}', "не json", report(["echo"])):  # последний: нет результата проверки bad
+        for bad in ('{"status": "wat"}', "not json", report(["echo"])):  # last: no result for check bad
             self.assertNotEqual(p.run("report", eng, input=bad)[0], 0, bad)
         p.ok("report", eng, input=report(["echo", "bad"]))
         self.assertIn("done", p.ok("report", eng, "--show"))
 
-        # accept: FAIL при падающей проверке
+        # accept: FAIL on a failing check
         code, out, _ = p.run("accept", eng)
         self.assertEqual(code, 1)
         self.assertIn("FAIL bad", out)
         self.assertIn("PASS echo", out)
         self.assertIn("checked", p.ok("log", eng))
-        # чиним карточку -> PASS; для review=true статус checked, не accepted
+        # fix the card -> PASS; with review=true status is checked, not accepted
         p.ok("task", "set", eng, "--drop-check", "bad")
         out = p.ok("accept", eng)
         self.assertIn("PASS echo", out)
@@ -74,28 +74,28 @@ class Flow(unittest.TestCase):
         self.assertNotIn("accepted", p.ok("log", eng, "-n", "1"))
         self.assertIn("checked", p.ok("status"))
 
-        # review rework без причины/некорректно -> отказ; accept -> ok
+        # review rework without reason/invalid -> refused; accept -> ok
         self.assertNotEqual(p.run("review", eng, "--verdict", "accept")[0], 0)
-        p.ok("review", eng, "--verdict", "accept", "--note", "всё хорошо")
+        p.ok("review", eng, "--verdict", "accept", "--note", "all good")
         self.assertIn("accept", p.ok("review", eng, "--show"))
         p.ok("event", eng, "accepted")
         self.assertIn("accepted", p.ok("log", eng, "-n", "1"))
 
-        # writer: review=false -> сразу accepted
+        # writer: review=false -> accepted at once
         p.ok("report", wri, input=report(["ok"]))
         p.ok("accept", wri)
         self.assertIn("accepted", p.ok("log", wri, "-n", "1"))
 
-        # status/log/render/digest/search содержат ID
+        # status/log/render/digest/search contain the ID
         self.assertIn(eng, p.ok("status", "--full"))
         self.assertIn(eng, p.ok("log", "demo"))
         self.assertIn(eng, p.ok("render", "demo", "--out", "-"))
-        self.assertIn(eng, p.ok("search", "Задача dp-engineer"))
+        self.assertIn(eng, p.ok("search", "Task dp-engineer"))
 
-        # merge веток задач в модуль, модуля в main
+        # merge task branches into the module, module into main
         out = p.ok("merge", f"demo/{eng}", "--into", "feature/demo", cwd=self.mc)
-        self.assertIn("слияние", out)
-        self.assertIn("уже влита", p.ok("merge", f"demo/{eng}", "--into", "feature/demo", cwd=self.mc))
+        self.assertIn(f"merge demo/{eng}", out)
+        self.assertIn("already merged", p.ok("merge", f"demo/{eng}", "--into", "feature/demo", cwd=self.mc))
         p.ok("merge", f"demo/{wri}", "--into", "feature/demo", cwd=self.mc)
         self.assertTrue((self.mc / f"{eng}.txt").is_file())
         self.assertFalse((p.root / f"{eng}.txt").exists())
@@ -103,7 +103,7 @@ class Flow(unittest.TestCase):
         self.assertTrue((p.root / f"{eng}.txt").is_file())
         self.assertIn(eng, p.ok("digest"))
 
-        # gc: список, потом удаление
+        # gc: list, then remove
         out = p.ok("gc")
         for b in ("feature/demo", f"demo/{eng}", f"demo/{wri}"):
             self.assertIn(b, out)
@@ -111,16 +111,16 @@ class Flow(unittest.TestCase):
         p.ok("gc", "--remove")
         self.assertFalse(self.mc.exists())
         self.assertNotIn("demo/", git("branch", "--format=%(refname:short)", cwd=p.root).replace("feature/demo", ""))
-        self.assertIn("влитых веток нет", p.ok("gc"))
-        # журнал остался в main
+        self.assertIn("no merged branches", p.ok("gc"))
+        # journal stays in main
         self.assertIn(eng, p.ok("log", "demo"))
 
-    # было: `search AA-1` (по ID задачи) ничего не находил
+    # regression: `search AA-1` (by task ID) found nothing
     def test_search_by_id(self):
         p = Project()
         self.addCleanup(p.cleanup)
         p.ok("module", "new", "aa", "--code", "AA")
-        p.ok("task", "new", "aa", "--type", "dp-writer", "--title", "Заголовок")
+        p.ok("task", "new", "aa", "--type", "dp-writer", "--title", "Heading")
         self.assertIn("AA-1", p.ok("search", "AA-1"))
 
 
@@ -129,27 +129,27 @@ class Questions(unittest.TestCase):
         p = Project()
         self.addCleanup(p.cleanup)
         p.ok("module", "new", "aa", "--code", "AA")
-        self.assertIn("Q1", p.ok("decide", "aa", "Брать A или B?", "--ask"))
-        self.assertIn("Брать A или B?", p.ok("questions"))
+        self.assertIn("Q1", p.ok("decide", "aa", "Take A or B?", "--ask"))
+        self.assertIn("Take A or B?", p.ok("questions"))
         self.assertIn("Q1", p.ok("status"))
-        self.assertIn("Брать A или B?", p.ok("inbox", "aa"))
-        p.ok("answer", "Q1", "берём B")
-        self.assertIn("открытых вопросов нет", p.ok("questions"))
-        self.assertIn("берём B", p.ok("questions", "--all"))
-        self.assertIn("берём B", p.ok("inbox", "aa", "--by", "other"))
-        self.assertNotEqual(p.run("answer", "Q9", "нет такого")[0], 0)
-        p.ok("decide", "aa", "Решили так", "--why", "потому")
-        self.assertIn("Решили так", p.ok("log", "aa"))
+        self.assertIn("Take A or B?", p.ok("inbox", "aa"))
+        p.ok("answer", "Q1", "taking B")
+        self.assertIn("no open questions", p.ok("questions"))
+        self.assertIn("taking B", p.ok("questions", "--all"))
+        self.assertIn("taking B", p.ok("inbox", "aa", "--by", "other"))
+        self.assertNotEqual(p.run("answer", "Q9", "no such")[0], 0)
+        p.ok("decide", "aa", "Decided so", "--why", "because")
+        self.assertIn("Decided so", p.ok("log", "aa"))
 
     def test_task_note_and_set(self):
         p = Project()
         self.addCleanup(p.cleanup)
         p.ok("module", "new", "aa", "--code", "AA")
         p.ok("task", "new", "aa", "--type", "dp-writer", "--title", "T")
-        p.ok("task", "note", "AA-1", "новое правило")
-        self.assertIn("новое правило", p.ok("task", "show", "AA-1"))
-        p.ok("task", "set", "AA-1", "goal=другая цель")
-        self.assertIn("другая цель", p.ok("task", "show", "AA-1"))
+        p.ok("task", "note", "AA-1", "new rule")
+        self.assertIn("new rule", p.ok("task", "show", "AA-1"))
+        p.ok("task", "set", "AA-1", "goal=other goal")
+        self.assertIn("other goal", p.ok("task", "show", "AA-1"))
         self.assertNotEqual(p.run("task", "set", "AA-1", "type=dp-reviewer")[0], 0)
         self.assertNotEqual(p.run("task", "show", "ZZ-9")[0], 0)
 
@@ -169,7 +169,7 @@ class AcceptExpect(unittest.TestCase):
         p.ok("task", "set", "AA-1", "--check", "numbad", "echo score 2", "num:score ([\\d.]+) >=5")
         self.assertEqual(p.run("accept", "AA-1")[0], 1)
 
-    # непонятный expect — отказ уже в task new / task set, а не в accept
+    # unknown expect is refused already in task new / task set, not in accept
     def test_bad_expect_rejected_early(self):
         p = Project()
         self.addCleanup(p.cleanup)
@@ -196,7 +196,7 @@ class AcceptExpect(unittest.TestCase):
         p2.ok("task", "new", "aa", "--type", "dp-writer", "--title", "T", "--test", "foo")
         code, out, _ = p2.run("accept", "AA-1")
         self.assertEqual(code, 1)
-        self.assertIn("недоступна", out)
+        self.assertIn("unavailable", out)
 
 
 class Jobs(unittest.TestCase):
@@ -207,7 +207,7 @@ class Jobs(unittest.TestCase):
     def test_job_ok(self):
         self.p.ok("job", "start", "j1", "20", "echo", "hello")
         out = self.p.ok("job", "wait", "j1", "20")
-        self.assertIn("код 0", out)
+        self.assertIn("code 0", out)
         self.assertIn("hello", out)
         self.assertIn("j1", self.p.ok("job", "status"))
 
@@ -224,9 +224,9 @@ class Jobs(unittest.TestCase):
         self.p.run("job", "stop", "j3")
 
     def test_lock(self):
-        self.assertIn("свободен", self.p.ok("lock", "status"))
+        self.assertIn("free", self.p.ok("lock", "status"))
         self.assertIn("locked", self.p.ok("lock", "cpu", "me", "--", "echo", "locked"))
-        self.assertIn("свободен", self.p.ok("lock", "status"))
+        self.assertIn("free", self.p.ok("lock", "status"))
 
     def test_accept_bg(self):
         self.p.ok("module", "new", "aa", "--code", "AA")

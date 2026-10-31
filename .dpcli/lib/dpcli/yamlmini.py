@@ -1,13 +1,13 @@
-"""Подмножество YAML для конфига и frontmatter агентов. Если установлен PyYAML — используется он.
+"""YAML subset for the config and agent frontmatter. If PyYAML is installed, it is used instead.
 
-Поддержано: словари по отступам, списки `- x` (в т.ч. на том же отступе, что ключ), списки словарей `- key: v`,
-inline `[a, b]` и `{k: v}`, скаляры (строки в кавычках и без, целые и дробные числа, true/false, null/~),
-блочные строки `|` и `>` (с `-`/`+`), комментарии `#`. Якоря, теги, многодокументность — нет.
+Supported: indented mappings, `- x` lists (incl. at the same indent as the key), lists of mappings `- key: v`,
+inline `[a, b]` and `{k: v}`, scalars (quoted and plain strings, ints and floats, true/false, null/~),
+block strings `|` and `>` (with `-`/`+`), `#` comments. Anchors, tags, multiple documents: not supported.
 """
 import json
 import re
 
-try:  # pragma: no cover — зависит от окружения
+try:  # pragma: no cover — depends on the environment
     import yaml as _yaml
 except ImportError:
     _yaml = None
@@ -27,7 +27,7 @@ def loads(text, use_pyyaml=True):
 
 
 def frontmatter(text):
-    """(словарь frontmatter, тело) для markdown с `---` в первой строке; без frontmatter — ({}, text)."""
+    """(frontmatter dict, body) for markdown with `---` on the first line; no frontmatter -> ({}, text)."""
     if not text.startswith("---"):
         return {}, text
     lines = text.splitlines(keepends=True)
@@ -37,9 +37,9 @@ def frontmatter(text):
         if lines[i].strip() in ("---", "..."):
             meta = loads("".join(lines[1:i])) or {}
             if not isinstance(meta, dict):
-                raise YamlError("frontmatter — не словарь")
+                raise YamlError("frontmatter is not a mapping")
             return meta, "".join(lines[i + 1:])
-    raise YamlError("frontmatter не закрыт строкой ---")
+    raise YamlError("frontmatter not closed with ---")
 
 
 _INT = re.compile(r"^[-+]?\d+$")
@@ -52,11 +52,11 @@ def _scalar(s):
         return None
     if s[0] == "'":
         if len(s) < 2 or s[-1] != "'":
-            raise YamlError(f"незакрытая кавычка: {s}")
+            raise YamlError(f"unclosed quote: {s}")
         return s[1:-1].replace("''", "'")
     if s[0] == '"':
         if len(s) < 2 or s[-1] != '"':
-            raise YamlError(f"незакрытая кавычка: {s}")
+            raise YamlError(f"unclosed quote: {s}")
         try:
             return json.loads(s)
         except json.JSONDecodeError:
@@ -96,7 +96,7 @@ def _strip_comment(s):
 
 
 def _split_key(text):
-    """'key: value' → (key, value) или None, если строка — не пара ключ: значение."""
+    """'key: value' -> (key, value), or None if the line is not a key: value pair."""
     if not text or text[0] in "[{":
         return None
     if text[0] in "'\"":
@@ -127,7 +127,7 @@ class _Flow:
     def value(self):
         self.ws()
         if self.i >= len(self.s):
-            raise YamlError(f"обрыв inline-значения: {self.s}")
+            raise YamlError(f"truncated inline value: {self.s}")
         ch = self.s[self.i]
         if ch == "[":
             self.i += 1
@@ -144,7 +144,7 @@ class _Flow:
                 if c == "]":
                     return out
                 if c != ",":
-                    raise YamlError(f"ожидалось , или ]: {self.s}")
+                    raise YamlError(f"expected , or ]: {self.s}")
                 self.ws()
                 if self.s[self.i:self.i + 1] == "]":
                     self.i += 1
@@ -160,7 +160,7 @@ class _Flow:
                 k = self.atom(stop=":,}")
                 self.ws()
                 if self.s[self.i:self.i + 1] != ":":
-                    raise YamlError(f"ожидалось «:» в {self.s}")
+                    raise YamlError(f"expected \":\" in {self.s}")
                 self.i += 1
                 self.ws()
                 c = self.s[self.i:self.i + 1]
@@ -171,7 +171,7 @@ class _Flow:
                 if c == "}":
                     return out
                 if c != ",":
-                    raise YamlError(f"ожидалось , или }}: {self.s}")
+                    raise YamlError(f"expected , or }}: {self.s}")
                 self.ws()
                 if self.s[self.i:self.i + 1] == "}":
                     self.i += 1
@@ -214,7 +214,7 @@ def _flow(s):
     v = f.value()
     f.ws()
     if f.i != len(s):
-        raise YamlError(f"лишнее после inline-значения: {s}")
+        raise YamlError(f"trailing data after inline value: {s}")
     return v
 
 
@@ -229,7 +229,7 @@ class _Parser:
     def __init__(self, text):
         self.raw = text.splitlines()
         if any("\t" in l[:len(l) - len(l.lstrip(" \t"))] for l in self.raw):
-            raise YamlError("табуляция в отступе")
+            raise YamlError("tab in indentation")
         self.i = 0
 
     def peek(self):
@@ -243,7 +243,7 @@ class _Parser:
         return None
 
     def err(self, msg):
-        raise YamlError(f"строка {self.i + 1}: {msg}")
+        raise YamlError(f"line {self.i + 1}: {msg}")
 
     def parse(self):
         p = self.peek()
@@ -253,11 +253,11 @@ class _Parser:
             self.i += 1
             v = _value(p[1])
             if self.peek() is not None:
-                self.err("лишнее после значения")
+                self.err("trailing data after value")
             return v
         v = self.block(p[0])
         if self.peek() is not None:
-            self.err(f"не разобрано: «{self.raw[self.i].strip()}» (отступ?)")
+            self.err(f"unparsed: \"{self.raw[self.i].strip()}\" (indent?)")
         return v
 
     def block(self, ind):
@@ -271,12 +271,12 @@ class _Parser:
             if p is None or p[0] < ind:
                 return d
             if p[0] > ind:
-                self.err("лишний отступ")
+                self.err("unexpected indent")
             if _is_dash(p[1]):
                 return d
             kv = _split_key(p[1])
             if kv is None:
-                self.err(f"ожидалось «ключ: значение»: {p[1]}")
+                self.err(f"expected \"key: value\": {p[1]}")
             key, rest = kv
             self.i += 1
             d[key] = self.after_key(rest, ind)
@@ -297,7 +297,7 @@ class _Parser:
             p = self.peek()
             if p is None or p[0] != ind or not _is_dash(p[1]):
                 if p is not None and p[0] > ind:
-                    self.err("лишний отступ")
+                    self.err("unexpected indent")
                 return lst
             body = p[1][1:].lstrip()
             if not body:

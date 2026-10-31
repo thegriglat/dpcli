@@ -1,9 +1,9 @@
-"""dpcli — журнал, карточки задач и приёмка модулей (только стандартная библиотека Python ≥ 3.10).
+"""dpcli — journal, task cards and module acceptance (Python >= 3.10 standard library only).
 
-Хранение: <plan_dir>/<модуль>/ — module.json, tasks/<ID>.json (карточка), tasks/<ID>.report.json
-(отчёт исполнителя), tasks/<ID>.review.json (ревью), events.jsonl и decisions.jsonl (только дописывание).
-Дом журнала модуля — рабочая копия ветки модуля (module_branch), если она есть (видно из любой копии),
-иначе текущая копия. Коды выхода: 0 ок, 1 ошибка/проверка не прошла, 2 аргументы.
+Storage: <plan_dir>/<module>/ — module.json, tasks/<ID>.json (card), tasks/<ID>.report.json
+(executor report), tasks/<ID>.review.json (review), events.jsonl and decisions.jsonl (append-only).
+The module journal lives in the working copy of the module branch (module_branch) if it exists (visible
+from any copy), otherwise in the current copy. Exit codes: 0 ok, 1 error/check failed, 2 arguments.
 """
 
-VERSION = 2  # поднимать при каждом изменении: старые копии перезапускаются из главной (reexec.maybe_reexec)
+VERSION = 3  # bump on every change: older copies re-exec from the main one (reexec.maybe_reexec)

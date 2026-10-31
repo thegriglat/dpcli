@@ -1,4 +1,4 @@
-"""Общая фикстура: временный git-проект с копией .dpcli и изолированным dpcli.json."""
+"""Shared fixture: temp git project with a copy of .dpcli and an isolated dpcli.json."""
 import json
 import os
 import shutil
@@ -21,7 +21,7 @@ def git(*args, cwd, check=True):
 
 
 class Project:
-    """Временный проект: <tmp>/proj (git, main), <tmp>/copies (worktree), <tmp>/cache."""
+    """Temp project: <tmp>/proj (git, main), <tmp>/copies (worktree), <tmp>/cache."""
 
     def __init__(self, config=None, commit=True):
         self.tmp = Path(tempfile.mkdtemp(prefix="dpcli-test-")).resolve()
@@ -101,7 +101,7 @@ def run(cli, *args, cwd, env=None, input=None, timeout=60):
 
 
 class ProjectCase(unittest.TestCase):
-    """Один проект на класс (setUpClass); для изоляции — свой Project в тесте."""
+    """One project per class (setUpClass); for isolation use a separate Project in the test."""
     CONFIG = None
 
     @classmethod

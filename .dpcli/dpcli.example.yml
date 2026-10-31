@@ -1,141 +1,141 @@
-# Конфиг dpcli. Кладётся в корень проекта как dpcli.yml (или dpcli.json; json приоритетнее).
-# Ищется вверх от текущего каталога до корня git. Все ключи необязательны — ниже умолчания.
-# Подстановки в шаблонах путей и веток: {project}, {module}, {task}, {copies}.
+# dpcli config. Put it in the project root as dpcli.yml (or dpcli.json; json takes precedence).
+# Searched upward from the current directory to the git root. All keys are optional — defaults below.
+# Substitutions in path and branch templates: {project}, {module}, {task}, {copies}.
 
-# Имя проекта (по умолчанию — имя каталога главного worktree).
+# Project name (default — directory name of the main worktree).
 # project: myproject
 
-# Основная ветка, куда вливаются модули.
+# Main branch that modules are merged into.
 main_branch: main
-# true — в main_branch dpcli вливает (merge/deliver) только по явному --into и только модуль, заведённый от неё:
-# обычный путь в main — MR фичеветки, который вливает человек.
+# true — dpcli merges (merge/deliver) into main_branch only with explicit --into and only a module created from it:
+# the normal path into main is a feature branch MR merged by a human.
 protect_main: false
-# Ветка модуля.
+# Module branch.
 module_branch: "feature/{module}"
-# Ветка задачи (от ветки модуля).
+# Task branch (from the module branch).
 task_branch: "{module}/{task}"
 
-# Каталог, где создаются рабочие копии (git worktree).
+# Directory where working copies (git worktree) are created.
 copies_dir: "~/worktrees"
-# Рабочая копия модуля.
+# Module working copy.
 module_copy: "{copies}/{project}/{module}"
-# Рабочая копия задачи.
+# Task working copy.
 task_copy: "{copies}/{project}/{module}-{task}"
 
-# Подготовка новых рабочих копий (module new, task new; повтор — dpcli copy setup [ПУТЬ]).
-# Копия создаётся с --no-checkout, ключи git-crypt копируются в её GIT_DIR, потом checkout.
-# Источник файлов ниже — главная копия (первая в git worktree list).
+# Setup of new working copies (module new, task new; rerun — dpcli copy setup [PATH]).
+# The copy is created with --no-checkout, git-crypt keys are copied into its GIT_DIR, then checkout.
+# Source of the files below — the main copy (first in git worktree list).
 worktree:
-  # Докопировать относительный core.hooksPath (напр. .husky/_) — он игнорируется git и в копии пуст.
+  # Copy over a relative core.hooksPath (e.g. .husky/_) — it is git-ignored and empty in the copy.
   hooks: true
-  # Игнорируемые git пути главной копии. Шаблон без «/» — по имени на любой глубине, со «/» — от корня.
-  # Что уже есть в копии или чей каталог отсутствует в ветке — пропускается; [] — выключить.
-  # Жёсткими ссылками (cp -al; на другой ФС — копией): дерево своё, файлы общие с главной копией.
+  # Git-ignored paths of the main copy. Pattern without "/" — by name at any depth, with "/" — from root.
+  # Already present in the copy or parent dir missing in the branch — skipped; [] — disable.
+  # As hard links (cp -al; on another FS — a copy): own tree, files shared with the main copy.
   link: [node_modules]
-  # Обычной копией.
+  # As a plain copy.
   copy: [.env, ".env.*"]
-  # Команда bash после подготовки: cwd — новая копия; env DPCLI_COPY, DPCLI_MAIN_COPY, DPCLI_BRANCH.
-  # Ошибка не откатывает копию. Пример: "make prepare"
+  # bash command after setup: cwd — the new copy; env DPCLI_COPY, DPCLI_MAIN_COPY, DPCLI_BRANCH.
+  # A failure doesn't roll back the copy. Example: "make prepare"
   # setup: "..."
   setup_timeout: 1800
 
-# Журналы и планы модулей: <plan_dir>/<модуль>/ (карточки, отчёты, events.jsonl, decisions.jsonl).
+# Module journals and plans: <plan_dir>/<module>/ (cards, reports, events.jsonl, decisions.jsonl).
 plan_dir: docs/plan
-# Контракты стыков: <contracts_dir>/<модуль>.md.
+# Seam contracts: <contracts_dir>/<module>.md.
 contracts_dir: docs/contracts
-# Каталог документации (INDEX.md, registry/, frontmatter-проверки dpcli docs).
+# Documentation directory (INDEX.md, registry/, dpcli docs frontmatter checks).
 docs_dir: docs
-# Подпроекты монорепы (module new --area): чью продуктовую цель закрывает модуль; общий код в libs
-# не меняет area. Задан список — module new/deliver без area отказывают (агент спрашивает разработчика),
-# docs check требует area у plan/contract/journal модуля; разделы INDEX.md — в этом порядке. [] — не используется.
+# Monorepo subprojects (module new --area): whose product goal the module serves; shared code in libs
+# doesn't change area. If a list is set — module new/deliver without area refuse (agent asks the developer),
+# docs check requires area on module plan/contract/journal; INDEX.md sections — in this order. [] — unused.
 areas: []
 
-# Проверки приёмки (dpcli accept).
+# Acceptance checks (dpcli accept).
 checks:
-  # Доп. переменные окружения для команд проверок (по умолчанию нет); {tmpdir} — свежий временный каталог.
+  # Extra environment variables for check commands (none by default); {tmpdir} — a fresh temp directory.
   # env:
   #   HOME_FOR_TESTS: "{tmpdir}"
-  # Шаблон команды для проверок вида {tests: …}; {filter} — фильтр тестов из карточки.
-  # Не задан — проверка tests недоступна. Пример: "python3 -m pytest -q -k {filter}"
+  # Command template for checks of the form {tests: …}; {filter} — test filter from the card.
+  # Not set — the tests check is unavailable. Example: "python3 -m pytest -q -k {filter}"
   # tests: "python3 -m pytest -q -k {filter}"
-  # Регэксп итога прогона тестов для проверок {tests: …}: группы (?P<total>…) и (?P<failed>…),
-  # по желанию (?P<skipped>…); берётся последнее совпадение. Нет совпадения — судим по коду выхода.
-  # По умолчанию — «N тестов, M упало[, K пропущено]». Регэксп — в одинарных кавычках (без экранирования \\).
+  # Regex for the test run summary for {tests: …} checks: groups (?P<total>…) and (?P<failed>…),
+  # optionally (?P<skipped>…); the last match is used. No match — judged by exit code.
+  # Default — "N tests, M failed[, K skipped]". Regex in single quotes (no \\ escaping).
   # tests_summary: '(?P<total>\d+) tests, (?P<failed>\d+) failed'
-  # Куда пишутся логи проверок: <log_dir>/<ID>/.
+  # Where check logs go: <log_dir>/<ID>/.
   log_dir: build/dpcli
 
-# Куда агенты кладут скриншоты и картинки (подсказка в шаблоне отчёта); по подпапке на задачу.
+# Where agents put screenshots and images (hint in the report template); one subfolder per task.
 artifacts_dir: build/artifacts
 
-# Сдача модуля (dpcli deliver): что из <plan_dir>/<модуль>/ остаётся в итоговой ветке после squash
-# (остальной журнал — только в ветке модуля) и архивный тег на ветку модуля (false — без тега; null — значение по умолчанию).
+# Module delivery (dpcli deliver): what from <plan_dir>/<module>/ stays in the target branch after squash
+# (the rest of the journal — only in the module branch) and the archive tag on the module branch (false — no tag; null — default).
 deliver:
   keep: [decisions.md, summary.md]
   archive_tag: "archive/{module}"
 
-# Зарезервированные коды модулей (не выдаются в module new / task new).
+# Reserved module codes (not assigned by module new / task new).
 reserved_codes: []
 
-# dpcli gc: что не считать «незакоммиченными изменениями» в копиях при удалении.
+# dpcli gc: what not to count as "uncommitted changes" in copies on removal.
 gc:
   ignore_dirs: [build, __pycache__]
-  # Шаблоны имён файлов, напр. ["*.uid"].
+  # File name patterns, e.g. ["*.uid"].
   ignore_globs: []
 
-# Смысловой поиск (dpcli index / dpcli search --sem) через Ollama.
+# Semantic search (dpcli index / dpcli search --sem) via Ollama.
 sem:
-  # Опционально: выключено по умолчанию. Включить — enabled: true и Ollama с моделью
-  # (ollama pull bge-m3). Без него работает обычный search; merge индекс не трогает.
+  # Optional: off by default. To enable — enabled: true and Ollama with the model
+  # (ollama pull bge-m3). Without it plain search works; merge doesn't touch the index.
   enabled: false
   model: bge-m3
   url: "http://localhost:11434"
   cache_dir: "~/.cache/dpcli/{project}"
-  # Корпус индекса — шаблоны путей от корня проекта.
+  # Index corpus — path patterns from the project root.
   globs:
     - "docs/**/*.md"
     - "CHANGELOG.md"
 
-# Долгие запуски (dpcli job).
+# Long runs (dpcli job).
 jobs:
   dir: "~/.cache/dpcli/{project}/jobs"
-  # Сессия tmux для окон задач (переменная DPCLI_TMUX_SESSION переопределяет).
+  # tmux session for job windows (DPCLI_TMUX_SESSION overrides).
   tmux_session: dp
-  # Слотов в замке cpu (по умолчанию — половина логических ядер; DPCLI_CPU_SLOTS переопределяет).
+  # Slots in the cpu lock (default — half of logical cores; DPCLI_CPU_SLOTS overrides).
   # cpu_slots: 8
 
-# Каталог замков dpcli lock cpu|gpu (по умолчанию — <jobs.dir>/locks).
+# Lock directory for dpcli lock cpu|gpu (default — <jobs.dir>/locks).
 # locks: "~/.cache/dpcli/{project}/locks"
 
-# Источник определений агентов (dpcli init рендерит их в .claude/agents/).
+# Source of agent definitions (dpcli init renders them into .claude/agents/).
 agents_dir: .dpcli/agents
 
-# Роли своих агентов проекта (.claude/agents/*.md) — подключить их к dpcli, не меняя их файлы.
-# role: coordinator | executor | reviewer | status; review: нужен ли ревьюер после PASS (для executor).
-# Перекрывает dpcli_role/dpcli_review из frontmatter. Список с источниками — dpcli agents.
+# Roles of your own project agents (.claude/agents/*.md) — attach them to dpcli without changing their files.
+# role: coordinator | executor | reviewer | status; review: whether a reviewer is needed after PASS (for executor).
+# Overrides dpcli_role/dpcli_review from frontmatter. List with sources — dpcli agents.
 # roles:
 #   backend-dev: {role: executor, review: true}
 #   code-reviewer: {role: reviewer}
 
-# Путь к описанию процесса (ссылки в dpcli task show и текстах агентов).
+# Path to the workflow description (links in dpcli task show and agent texts).
 workflow: .claude/dpcli-workflow.md
 
-# Документация (dpcli docs): проверка frontmatter, индекс, реестры.
+# Documentation (dpcli docs): frontmatter check, index, registries.
 docs:
-  # Дополнительные файлы под проверку (шаблоны путей от корня проекта), кроме {docs_dir}/**/*.md.
+  # Additional files to check (path patterns from the project root), besides {docs_dir}/**/*.md.
   extra: []
-  # Исключения (шаблоны путей от корня; * захватывает и слэши). По умолчанию — архив.
+  # Exclusions (path patterns from root; * matches slashes too). Default — the archive.
   exclude:
     - "docs/archive/**"
-  # Допустимые значения type и status во frontmatter.
+  # Allowed type and status values in frontmatter.
   types: [guide, plan, contract, research, reference, journal, registry]
   statuses: [active, idea, postponed, closed, superseded]
-  # Лимит размера документа (КБ); архив и generated-файлы не проверяются.
+  # Document size limit (KB); archive and generated files are not checked.
   max_kb: 40
-  # error — превышение лимита ошибка docs check (код 1); warn — только предупреждение.
+  # error — exceeding the limit is a docs check error (exit 1); warn — warning only.
   max_kb_mode: error
-  # Максимальная длина summary (символов, одна строка: вывод/назначение документа).
+  # Maximum summary length (chars, one line: conclusion/purpose of the document).
   summary_max: 140
-  # Реестры, которые собирает docs index: research, contracts, decisions
-  # (decisions дублирует журналы модулей — включать явно; решения ищутся dpcli search).
+  # Registries built by docs index: research, contracts, decisions
+  # (decisions duplicates module journals — enable explicitly; decisions are found via dpcli search).
   registries: [research, contracts]

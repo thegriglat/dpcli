@@ -1,4 +1,4 @@
-"""Журнал модуля: дом модуля, список модулей, карточки, события, состояния задач, коды модулей."""
+"""Module journal: module home, module list, cards, events, task states, module codes."""
 import json
 import os
 import re
@@ -12,12 +12,12 @@ EVENT_KINDS = ["started", "reported", "accepted", "merged", "blocked", "cancelle
 FINAL = {"accepted", "merged", "cancelled"}
 SEVERITY = {"blocker": "B", "major": "M", "minor": "m"}
 CODE_RE = re.compile(r"^[A-Z]{2,4}$")
-ID_RE = re.compile(r"^([A-Z]{2,4})-([A-Z]?)(\d+)[a-z]?$")  # NN-7, NN-7a, этапные NN-P8
+ID_RE = re.compile(r"^([A-Z]{2,4})-([A-Z]?)(\d+)[a-z]?$")  # NN-7, NN-7a, stage NN-P8
 
 
 def infer_role():
-    """Автор без --by и $DPCLI_ROLE — по ветке копии: ветка модуля → coordinator, ветка задачи → executor,
-    любая другая (main_branch или фичеветка, от которой заводят модули) → main; вне репозитория → «-»."""
+    """Author without --by and $DPCLI_ROLE, from the copy's branch: module branch → coordinator, task branch → executor,
+    any other (main_branch or a feature branch modules are based on) → main; outside a repo → "-"."""
     br = gitx.git("branch", "--show-current")
     if not br:
         return "-"
@@ -35,7 +35,7 @@ def local_only():
 
 
 def module_home(mod):
-    """Каталог журнала модуля: копия ветки модуля, если есть, иначе текущая."""
+    """Module journal directory: the module branch copy if any, else the current one."""
     pd = config.plan_dir()
     if not local_only():
         mb = config.module_branch(mod)
@@ -46,7 +46,7 @@ def module_home(mod):
 
 
 def home_root(home):
-    """Корень рабочей копии по дому модуля (<корень>/<plan_dir>/<модуль>)."""
+    """Working copy root from a module home (<root>/<plan_dir>/<module>)."""
     root = Path(home).parent
     for _ in Path(config.plan_dir()).parts:
         root = root.parent
@@ -71,18 +71,18 @@ def all_modules():
 
 
 def find_task(tid):
-    """(модуль, каталог модуля) по ID задачи."""
+    """(module, module directory) by task ID."""
     mods = all_modules()
     hits = [(m, h) for m, h in mods.items() if (h / "tasks" / f"{tid}.json").exists()]
     if not hits:
-        raise DpError(f"задача {tid} не найдена (модули: {', '.join(mods) or 'нет'})")
+        raise DpError(f"task {tid} not found (modules: {', '.join(mods) or 'none'})")
     if len(hits) > 1:
-        raise DpError(f"{tid} есть в нескольких модулях: {', '.join(m for m, _ in hits)}")
+        raise DpError(f"{tid} is in several modules: {', '.join(m for m, _ in hits)}")
     return hits[0]
 
 
 def resolve_target(x):
-    """ID задачи или имя модуля → (модуль, дом, task|None)."""
+    """Task ID or module name → (module, home, task|None)."""
     mods = all_modules()
     if x in mods:
         return x, mods[x], None
@@ -91,26 +91,26 @@ def resolve_target(x):
 
 
 def is_work_branch(br):
-    """Ветка модуля или задачи dpcli — от неё модуль не заводят и в неё не сдают."""
+    """A dpcli module or task branch: modules are not based on it nor delivered into it."""
     return bool(config.module_of_branch(br) or config.task_branch_fields(br))
 
 
 def module_base(meta):
-    """База модуля — ветка, от которой он заведён (module new --from, по умолчанию текущая ветка главной сессии);
-    в неё — sync и deliver. Старые модули без base — main_branch."""
+    """Module base: the branch it was created from (module new --from, default: the main session's current branch);
+    sync and deliver go into it. Old modules without base: main_branch."""
     return meta.get("base") or config.main_branch()
 
 
 def guard_main(into, explicit, base=None):
-    """protect_main: в main_branch dpcli вливает только по явному --into и только модуль, заведённый от неё:
-    обычный путь в main — MR фичеветки, который вливает человек."""
+    """protect_main: dpcli merges into main_branch only on explicit --into and only a module based on it:
+    the normal path to main is a feature branch MR merged by a human."""
     main = config.main_branch()
     if into != main or not config.get("protect_main"):
         return
     if not explicit:
-        raise DpError(f"в {main} без явного --into {main} не вливаю: обычный путь — фичеветка → MR, вливает человек")
+        raise DpError(f"not merging into {main} without explicit --into {main}: normal path is feature branch → MR, merged by a human")
     if base and base != main:
-        raise DpError(f"модуль заведён от {base}: сдаётся в {base}, в {main} — только через MR фичеветки")
+        raise DpError(f"module based on {base}: delivered into {base}; into {main} only via a feature branch MR")
 
 
 def module_meta(mod, home):
@@ -123,7 +123,7 @@ def module_meta(mod, home):
 
 
 def module_codes():
-    """{код: модуль} по module.json всех модулей."""
+    """{code: module} from module.json of all modules."""
     out = {}
     for m, h in all_modules().items():
         c = (read_json(h / "module.json") or {}).get("code")
@@ -139,25 +139,25 @@ def reserved_codes():
 def check_code(code, mod):
     res = reserved_codes()
     if not CODE_RE.match(code) or code in res:
-        raise DpError(f"код модуля «{code}»: 2–4 заглавные латинские буквы"
-                      + (f" (зарезервированы: {', '.join(sorted(res))})" if res else "") + ", напр. NN, UC")
+        raise DpError(f"module code \"{code}\": 2–4 uppercase Latin letters"
+                      + (f" (reserved: {', '.join(sorted(res))})" if res else "") + ", e.g. NN, UC")
     other = module_codes().get(code)
     if other and other != mod:
-        raise DpError(f"код {code} уже у модуля {other}")
+        raise DpError(f"code {code} already used by module {other}")
 
 
 def check_area(area, required=True):
-    """area модуля — из config.areas; если список задан, без area модуль не заводится."""
+    """Module area from config.areas; if the list is set, a module cannot be created without area."""
     allowed = config.areas()
     if not allowed:
         return
     if not area:
         if required:
-            raise DpError(f"нужен --area: одно из {', '.join(allowed)} (ключ areas в конфиге). "
-                          f"Не выбирать самому — спросить разработчика, к какому подпроекту относится модуль")
+            raise DpError(f"--area required: one of {', '.join(allowed)} (config key areas). "
+                          f"Do not pick it yourself: ask the developer which subproject the module belongs to")
         return
     if area not in allowed:
-        raise DpError(f"area «{area}» не из {', '.join(allowed)} (ключ areas в конфиге)")
+        raise DpError(f"area \"{area}\" not in {', '.join(allowed)} (config key areas)")
 
 
 def ensure_module(mod, home, **kw):
@@ -187,7 +187,7 @@ def add_event(home, task, kind, by, note="", commits=None, **extra):
 
 
 def rev_tag(ev):
-    """rev:rework 2B1M — вердикт и число замечаний по серьёзности."""
+    """rev:rework 2B1M: verdict and issue counts by severity."""
     cnt = ev.get("issues") or {}
     return f"rev:{ev.get('verdict', '?')}" + ("" if not any(cnt.values()) else " " + "".join(
         f"{cnt[k]}{SEVERITY[k]}" for k in SEVERITY if cnt.get(k)))
@@ -207,7 +207,7 @@ def task_cards(home):
 
 
 def task_states(home):
-    """{ID: {status, t, last_t, commits[], note}} по событиям."""
+    """{ID: {status, t, last_t, commits[], note}} from events."""
     st = {}
     for ev in read_jsonl(home / "events.jsonl"):
         tid = ev.get("task")
@@ -236,7 +236,7 @@ def state_label(s):
 
 
 def addenda(home, tid):
-    """Дополнения координатора к уже выданной задаче: события note с addendum."""
+    """Coordinator addenda to an already issued task: note events with addendum."""
     return [e for e in read_jsonl(home / "events.jsonl") if e.get("task") == tid and e.get("addendum")]
 
 
@@ -247,23 +247,23 @@ def open_questions(home):
 
 
 def question_answers(home):
-    """{Qn: последний ответ (запись decisions)}."""
+    """{Qn: latest answer (decisions record)}."""
     return {d["answers"]: d for d in read_jsonl(home / "decisions.jsonl") if d.get("answers")}
 
 
 def expect_arg(exp):
-    """EXPECT из командной строки: «{…}» — JSON-объект (составное условие), иначе строка."""
+    """EXPECT from the command line: "{…}" is a JSON object (compound condition), else a string."""
     if isinstance(exp, str) and exp.lstrip().startswith("{"):
         try:
             return json.loads(exp)
         except json.JSONDecodeError as e:
-            raise DpError(f"expect: неверный JSON-объект ({e})")
+            raise DpError(f"expect: invalid JSON object ({e})")
     return exp
 
 
 def journal_commit(path):
-    """Журнал dpcli (<plan_dir>/<модуль>/) не считается «грязью»: коммитим его своими путями, «<модуль>: журнал dpcli».
-    → список модулей. Остальные изменения остаются и по-прежнему дают отказ."""
+    """The dpcli journal (<plan_dir>/<module>/) is not "dirt": commit it by its own paths, "<module>: dpcli journal".
+    → list of modules. Other changes remain and still cause a refusal."""
     pd = config.plan_dir()
     pparts = list(Path(pd).parts)
     n = len(pparts)
@@ -273,5 +273,5 @@ def journal_commit(path):
         if len(parts) >= n + 2 and parts[:n] == pparts and parts[n] not in mods:
             mods.append(parts[n])
     for m in mods:
-        gitx.commit_paths(path, [Path(path) / pd / m], f"{m}: журнал dpcli")
+        gitx.commit_paths(path, [Path(path) / pd / m], f"{m}: dpcli journal")
     return mods

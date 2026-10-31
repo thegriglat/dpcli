@@ -1,9 +1,10 @@
-"""Рабочие копии (git worktree): создание с git-crypt, подготовка, откат.
+"""Working copies (git worktree): creation with git-crypt, setup, rollback.
 
-create() — `git worktree add --no-checkout`, ключи git-crypt в GIT_DIR копии, затем checkout: иначе smudge-фильтр
-git-crypt падает (ключи лежат в общем .git, а у копии свой GIT_DIR). Неудача — копия и созданная ветка убираются.
-setup() — то, чего нет в git, но без чего копия не рабочая: каталог хуков (core.hooksPath), игнорируемые файлы
-из главной копии по шаблонам worktree.copy (копией) и worktree.link (жёсткими ссылками), команда worktree.setup.
+create() — `git worktree add --no-checkout`, git-crypt keys into the copy's GIT_DIR, then checkout: otherwise the
+git-crypt smudge filter fails (keys live in the shared .git, but the copy has its own GIT_DIR). On failure the copy
+and the created branch are removed.
+setup() — what git lacks but the copy needs to work: hooks dir (core.hooksPath), ignored files from the main copy
+by worktree.copy (copied) and worktree.link (hard links) patterns, the worktree.setup command.
 """
 import fnmatch
 import os
@@ -23,7 +24,7 @@ def _git_dir(path, common=False):
 
 
 def _copy_crypt_keys(path):
-    """Ключи git-crypt из общего .git в GIT_DIR копии (копией, не симлинком). → True, если git-crypt есть."""
+    """git-crypt keys from the shared .git into the copy's GIT_DIR (copied, not symlinked). → True if git-crypt is used."""
     src = _git_dir(path, common=True) / "git-crypt"
     if not src.is_dir():
         return False
@@ -34,7 +35,7 @@ def _copy_crypt_keys(path):
 
 
 def still_encrypted(path):
-    """Файлы с filter=git-crypt, оставшиеся зашифрованными (начинаются с \\0GITCRYPT)."""
+    """Files with filter=git-crypt still encrypted (start with \\0GITCRYPT)."""
     files = gitx.gitr("ls-files", "-z", cwd=path).stdout
     if not files:
         return []
@@ -56,7 +57,7 @@ def still_encrypted(path):
 
 
 def rollback(path, branch=None):
-    """Убрать копию (и ветку, если её создали мы) после неудачи; ошибки отката не скрывают исходную."""
+    """Remove the copy (and the branch, if we created it) after a failure; rollback errors do not mask the original."""
     gitx.gitr("worktree", "remove", "--force", "--force", str(path))
     if Path(path).exists() and not (Path(path) / ".git").exists():
         shutil.rmtree(path, ignore_errors=True)
@@ -67,9 +68,9 @@ def rollback(path, branch=None):
 
 
 def create(path, branch, base=None):
-    """Копия path на ветке branch; base задан — новая ветка от base. Неудача — откат и DpError.
+    """Copy at path on branch; with base — new branch from base. On failure — rollback and DpError.
 
-    Расшифровку проверяет setup()."""
+    Decryption is checked by setup()."""
     path = Path(path)
     args = ["worktree", "add", "--no-checkout"] + (["-b", branch, str(path), base] if base else [str(path), branch])
     r = gitx.gitr(*args)
@@ -82,34 +83,34 @@ def create(path, branch, base=None):
         _copy_crypt_keys(path)
         r = gitx.gitr("checkout", cwd=path)
         if r.returncode:
-            raise DpError(f"checkout в {pretty(path)}: {gitx.gerr(r)}")
+            raise DpError(f"checkout in {pretty(path)}: {gitx.gerr(r)}")
     except BaseException:
         rollback(path, branch if base else None)
         raise
 
 
 def _match(rel_path, pats):
-    """Шаблон без «/» — по имени (на любой глубине), со «/» — по пути от корня копии."""
+    """Pattern without "/" matches by name (any depth), with "/" by path from the copy root."""
     name = rel_path.rsplit("/", 1)[-1]
     return any(fnmatch.fnmatch(rel_path if "/" in p else name, p) for p in pats)
 
 
 def _cp(src, dst, link):
-    """cp -al (жёсткие ссылки; не вышло — обычная копия) или cp -a."""
+    """cp -al (hard links; falls back to plain copy) or cp -a."""
     if link:
         r = subprocess.run(["cp", "-al", str(src), str(dst)], capture_output=True, text=True)
         if r.returncode == 0:
-            return "ссылки"
+            return "links"
         if Path(dst).is_dir():
             shutil.rmtree(dst, ignore_errors=True)
     r = subprocess.run(["cp", "-a", str(src), str(dst)], capture_output=True, text=True)
     if r.returncode:
         raise DpError(f"cp {src} → {dst}: {r.stderr.strip()}")
-    return "копия"
+    return "copy"
 
 
 def _copy_missing(src, dst):
-    """Докопировать в dst файлы src, которых там нет (свои файлы копии не перезаписываются). → сколько добавлено."""
+    """Copy into dst the src files it lacks (the copy's own files are not overwritten). → number added."""
     n = 0
     for d, _dirs, files in os.walk(src):
         rel = Path(d).relative_to(src)
@@ -123,33 +124,33 @@ def _copy_missing(src, dst):
 
 
 def hooks_dir(root=None):
-    """Относительный core.hooksPath (напр. .husky/_) или None."""
+    """Relative core.hooksPath (e.g. .husky/_) or None."""
     hp = gitx.git("config", "--get", "core.hooksPath", cwd=root)
     return hp.strip().rstrip("/").removeprefix("./") if hp and not os.path.isabs(os.path.expanduser(hp)) else None
 
 
 def setup(path):
-    """Подготовить копию по worktree.* конфига; идемпотентно (что уже есть — не трогает). → строки итога."""
+    """Prepare the copy per worktree.* config; idempotent (leaves what exists). → summary lines."""
     path = Path(path).resolve()
     main = gitx.main_worktree()
     lines = []
     if main is None or main.resolve() == path:
-        return ["подготовка: это главная копия — нечего переносить"]
+        return ["setup: this is the main copy — nothing to bring"]
     main = main.resolve()
     if _copy_crypt_keys(path):
         enc = still_encrypted(path)
         if enc:
-            lines.append(f"git-crypt: не расшифровано {len(enc)} ({', '.join(enc[:3])}) — git -C {path} crypt unlock")
+            lines.append(f"git-crypt: {len(enc)} not decrypted ({', '.join(enc[:3])}) — git -C {path} crypt unlock")
 
     hp = hooks_dir(path) if config.get("worktree.hooks", True) else None
     if hp and (main / hp).is_dir() and not gitx.git("ls-files", "--", hp, cwd=path):
         added = _copy_missing(main / hp, path / hp)
         if added:
-            lines.append(f"хуки: {hp} из главной копии ({added} файл(ов))")
+            lines.append(f"hooks: {hp} from main copy ({added} file(s))")
 
     link = [str(x) for x in config.get("worktree.link") or []]
     copy = [str(x) for x in config.get("worktree.copy") or []]
-    done = {"ссылки": [], "копия": []}
+    done = {"links": [], "copy": []}
     if link or copy:
         out = gitx.gitr("-c", "core.quotepath=off", "ls-files", "-z", "--others", "--ignored", "--exclude-standard",
                         "--directory", cwd=main).stdout
@@ -161,11 +162,11 @@ def setup(path):
                 continue
             src, dst = main / ent, path / ent
             if dst.exists() or dst.is_symlink() or not dst.parent.is_dir():
-                continue  # уже есть или каталога нет в этой ветке
+                continue  # already exists or dir missing on this branch
             done[_cp(src, dst, is_link)].append(ent)
     for k, v in done.items():
         if v:
-            lines.append(f"из главной копии ({k}): {', '.join(v)}")
+            lines.append(f"from main copy ({k}): {', '.join(v)}")
 
     cmd = config.get("worktree.setup")
     if cmd:
@@ -176,8 +177,8 @@ def setup(path):
             r = subprocess.run(["bash", "-c", str(cmd)], cwd=path, env=env, capture_output=True, text=True, timeout=to)
             ok, tail = r.returncode == 0, (r.stderr.strip() or r.stdout.strip()).splitlines()[-3:]
         except subprocess.TimeoutExpired:
-            ok, tail = False, [f"таймаут {to} с"]
-        lines.append(f"worktree.setup: {'ок' if ok else 'ОШИБКА — ' + ' | '.join(tail)}")
+            ok, tail = False, [f"timeout {to}s"]
+        lines.append(f"worktree.setup: {'ok' if ok else 'ERROR — ' + ' | '.join(tail)}")
         if not ok:
-            lines.append(f"повторить: .dpcli/dpcli copy setup {path}")
-    return lines or ["подготовка: переносить нечего"]
+            lines.append(f"retry: .dpcli/dpcli copy setup {path}")
+    return lines or ["setup: nothing to bring"]
