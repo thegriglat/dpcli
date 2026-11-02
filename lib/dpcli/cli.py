@@ -7,7 +7,7 @@ from . import VERSION
 from .reexec import maybe_reexec
 from .util import CLI, DpError, Parser, die
 
-COMMANDS = ["task", "roles", "journal_cmds", "accept", "report", "status", "plan", "branches", "deliver", "search", "jobs", "feedback", "contribute", "update"]
+COMMANDS = ["task", "roles", "journal_cmds", "accept", "report", "status", "plan", "branches", "deliver", "search", "jobs", "feedback"]
 OPTIONAL = ["init", "docs"]  # optional; no module, no command
 
 

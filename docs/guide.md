@@ -15,8 +15,8 @@ Exit codes: 0 — ok, 1 — error or FAIL, 2 — invalid arguments. An error is 
 Recommended — the installer, in the root of the project:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zolotarev/dpcli/main/install.sh | bash
-# or, with dpcli already present: bash .dpcli/install.sh
+curl -fsSL https://raw.githubusercontent.com/thegriglat/dpcli/main/install.sh | bash
+# update, with dpcli already present: bash .dpcli/install.sh
 ```
 
 | Option | |
@@ -24,28 +24,13 @@ curl -fsSL https://raw.githubusercontent.com/zolotarev/dpcli/main/install.sh | b
 | `--lang CODE` | language agents write in for people (asked if omitted; default `en`) |
 | `--commit-lang CODE` | language of commit messages (asked if omitted; default `en`) |
 | `--tools` | install missing fast tools for agents: `rg`, `fd`, `jq`, `ast-grep` |
+| `--ref vN\|branch` | install this tag or branch (default: the latest tag `vN`, else the default branch) |
 | `--yes` | no questions, defaults |
-| `DPCLI_REPO=url` | install from another hub (a fork) |
+| `DPCLI_REPO=url` | install from another repository (a fork) |
 
-It adds the submodule `.dpcli` at the latest release, writes `language` and `worktree.setup` into the config, runs `init`, and prints the commit command (it never commits). A vendored (copied) `.dpcli` is replaced by the submodule; own agents move to `.dpcli-local/agents/`. Rerunning is safe.
+It copies the distribution (`dpcli`, `install.sh`, `lib/`, `agents/`, `hooks/`, `skills/`, `templates/`, the example config) into the folder `.dpcli`, writes `language` into the config, runs `init`, and prints the commit command (it never commits). `.dpcli` is a plain folder committed with the project: every `git worktree` copy has it without extra setup. A `.dpcli` submodule is converted to a folder; own agents found in `.dpcli/agents/` move to `.dpcli-local/agents/`. It refuses to run over uncommitted changes in `.dpcli`. Rerunning is safe; rerun it to update.
 
-Manual installation:
-
-Recommended as a submodule: dpcli is a separate repository, the project pins its version.
-
-```
-git submodule add https://github.com/zolotarev/dpcli.git .dpcli
-.dpcli/dpcli init
-```
-
-In the project's `dpcli.yml`, initialize the submodule in new working copies (`git worktree add` does not check it out):
-
-```yaml
-worktree:
-  setup: "git submodule update --init .dpcli"
-```
-
-Without a submodule — copy the repository contents (without `tests/`, `.git`) into a `.dpcli` directory at the project root and run `.dpcli/dpcli init`.
+Manual installation: copy the files above into `.dpcli` at the project root and run `.dpcli/dpcli init`.
 
 `init` creates (all idempotent):
 
@@ -96,21 +81,6 @@ After `init`, commit the result (only the main session commits).
 | `feedback new "title" --match REGEX --scope project\|dpcli [--why]` | create a cluster F-n (ledger `.dpcli-local/feedback.jsonl`) |
 | `feedback fix F-n --where … [--pr URL]` · `wontfix F-n --why …` · `reopen F-n` | close / reject / reopen |
 | `stats [module] [--since D] [--tokens]` | tasks, created→accepted, rework rounds, frictions; check durations (median/max s); `--tokens`: context tokens of executors, reviewers and coordinators and per task, from Claude Code's subagent logs |
-| `contribute F-n [--title T] [--new]` | dpcli-scope fix from `.dpcli` branch `improve/*` → PR to the hub (origin or fork), or +1 on a similar open one; no commits → issue; no `gh` → `build/dpcli/contribute-F-n/` with issue text and patches |
-
-## Updating automatically
-
-`init` adds a Claude Code `SessionStart` hook: `.dpcli/dpcli update --auto` — at most once a day, silent when nothing happened.
-
-`update` works in the main copy only. It fetches the hub, moves the `.dpcli` submodule to the latest release tag `vN` (never to a branch), runs `init` (the project layer `.dpcli-local/` is applied again) and commits `.dpcli`, `.claude/` and `CLAUDE.md` with the message `dpcli vN`, printing the CHANGELOG lines of the new releases. It skips, with one line of explanation, when `.dpcli` has uncommitted changes, is on an `improve/*` branch, has local commits on `main`, or the network is down.
-
-It also checks the PRs and issues this project sent with `contribute`: merged → the cluster is marked fixed; `rework` or rejected → the reviewer's arguments go into the ledger and `harness-retro` decides whether to rework or drop.
-
-| Flag | |
-|---|---|
-| `--check` | only say whether a new version is available |
-| `--pin vN` / `--unpin` | never update above vN (`.dpcli-local/update.json`, committed) |
-| `--prs-only` | only check own PRs/issues |
 
 ## Long checks
 
@@ -408,7 +378,7 @@ For `job`/`lock` the exit code is the command's own (124 — timeout).
 
 ## Updating dpcli in a project
 
-1. Submodule: `git -C .dpcli pull` (or `checkout <version>`), then `git add .dpcli` and a project commit. Copy: replace the `.dpcli` contents with the new version (keep or carry over your own files in `.dpcli/agents`).
+1. `bash .dpcli/install.sh` (or the `curl … | bash` line); `--ref vN` pins a version. Project changes live in `.dpcli-local/`, never in `.dpcli`.
 2. Run `.dpcli/dpcli init` (or `init --check` to see what changed; `--force` — overwrite hand-edited files).
 3. The version is `VERSION` in `.dpcli/lib/dpcli/__init__.py` (`.dpcli/dpcli --version`).
 
@@ -416,4 +386,4 @@ A stale `.dpcli` in a task's working copy re-execs itself from the main copy (`<
 
 ## Developing dpcli
 
-The repository root is the distribution itself (in a project it lives as `.dpcli`): entry point `dpcli`, package `lib/dpcli`, `agents/`, `skills/`, `templates/`, `dpcli.example.yml`. Also: `tests/` (unittest, `python3 -m unittest discover -s tests`), [CLAUDE.md](../CLAUDE.md) — working rules, [ROADMAP.md](../ROADMAP.md) — plan, [CHANGELOG.md](../CHANGELOG.md) — changes by version.
+The repository root is the distribution itself (in a project it is copied to `.dpcli`): entry point `dpcli`, package `lib/dpcli`, `agents/`, `skills/`, `templates/`, `dpcli.example.yml`. Also: `tests/` (unittest, `python3 -m unittest discover -s tests`), [CLAUDE.md](../CLAUDE.md) — working rules, [ROADMAP.md](../ROADMAP.md) — plan, [CHANGELOG.md](../CHANGELOG.md) — changes by version.

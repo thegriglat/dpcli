@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Install or update dpcli in an existing git project (run in the project):
-#   curl -fsSL https://raw.githubusercontent.com/zolotarev/dpcli/main/install.sh | bash
-#   bash install.sh [--lang ru] [--commit-lang en] [--tools] [--yes]
-# Idempotent. Adds the submodule .dpcli at the latest release, config (language, worktree setup), runs init.
-# Migrates a vendored (copied) .dpcli: own agents go to .dpcli-local/agents. Never commits.
+#   curl -fsSL https://raw.githubusercontent.com/thegriglat/dpcli/main/install.sh | bash
+#   bash install.sh [--lang ru] [--commit-lang en] [--ref vN|branch] [--tools] [--yes]
+# Idempotent. Copies the distribution into .dpcli (a plain folder committed with the project; no submodule),
+# config (language), runs init. Update = run it again. Own agents left in .dpcli/agents go to .dpcli-local/agents;
+# a .dpcli submodule is converted to a folder. Never commits.
 set -euo pipefail
 
-REPO="${DPCLI_REPO:-https://github.com/zolotarev/dpcli.git}"
+REPO="${DPCLI_REPO:-https://github.com/thegriglat/dpcli.git}"
+REF="${DPCLI_REF:-}"
 LANG_TEXT="" LANG_COMMITS="" TOOLS=0 YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --lang) LANG_TEXT="$2"; shift 2 ;;
     --commit-lang) LANG_COMMITS="$2"; shift 2 ;;
+    --ref) REF="$2"; shift 2 ;;
     --tools) TOOLS=1; shift ;;
     --yes|-y) YES=1; shift ;;
-    -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
     *) echo "install: unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -37,48 +40,40 @@ ask() {  # ask VAR "question" default — reads the terminal even under curl | b
 ask LANG_TEXT "Language agents write in for people (replies, reports, plans, docs): en, ru, de, …" en
 ask LANG_COMMITS "Language of commit messages" en
 
-# ---- the submodule
-if git config -f .gitmodules --get submodule..dpcli.path >/dev/null 2>&1; then
-  git submodule update --init .dpcli
-  say "submodule .dpcli present"
-elif git ls-files -s .dpcli | grep -q '^160000'; then
-  # recorded as a submodule but missing from .gitmodules (or never initialized): register it and check it out
-  git config -f .gitmodules submodule..dpcli.path .dpcli
-  git config -f .gitmodules submodule..dpcli.url "$REPO"
-  git add .gitmodules
-  if ! git submodule update --init .dpcli 2>/dev/null; then
-    git rm -q --cached .dpcli; rmdir .dpcli 2>/dev/null || true  # an empty uninitialized dir only
-    git submodule add -q --force "$REPO" .dpcli
-  fi
-  say "submodule .dpcli registered from $REPO"
-elif [ -n "$(git ls-files .dpcli | head -1)" ]; then
-  # vendored copy; deleted from disk — restore it from the index first so own agents can be carried over
-  [ -d .dpcli ] || git checkout -q -- .dpcli
-  backup="$(git rev-parse --git-dir)/dpcli-vendored-$(date +%Y%m%d%H%M%S)"
-  mv .dpcli "$backup"
-  git rm -r -q --cached .dpcli
-  git submodule add -q "$REPO" .dpcli
+# ---- the distribution: latest release tag (or --ref, or the default branch) copied into .dpcli
+DIST_FILES="dpcli install.sh lib agents hooks skills templates dpcli.example.yml README.md CHANGELOG.md LICENSE"
+wipe() { case "$1" in .dpcli|"$tmp"|"$(git rev-parse --git-dir)/modules/.dpcli") [ ! -e "$1" ] || rm -r -- "$1" ;; *) die "refusing to delete $1" ;; esac; }
+tmp=$(mktemp -d); trap 'chmod -R u+w "$tmp" 2>/dev/null; wipe "$tmp"' EXIT
+git clone -q "$REPO" "$tmp/src" || die "cannot clone $REPO"
+[ -n "$REF" ] || REF=$(git -C "$tmp/src" tag -l 'v*' | sort -V | tail -1)
+[ -n "$REF" ] && { git -C "$tmp/src" checkout -q "$REF" || die "no ref $REF in $REPO"; }
+latest=$(sed -n 's/^VERSION *= *\([0-9]*\).*/v\1/p' "$tmp/src/lib/dpcli/__init__.py")
+
+[ -z "$(git status --porcelain -- .dpcli 2>/dev/null)" ] || die "uncommitted changes in .dpcli would be lost — commit or discard them (project changes belong in .dpcli-local/)"
+if git ls-files -s .dpcli | grep -q '^160000'; then  # a submodule (also without .gitmodules) → a plain folder
+  git rm -q --cached .dpcli
+  [ -f .gitmodules ] && git config -f .gitmodules --remove-section submodule..dpcli 2>/dev/null && git add .gitmodules
+  wipe .dpcli; wipe "$(git rev-parse --git-dir)/modules/.dpcli"
+  say "submodule .dpcli converted to a folder"
+elif [ -e .dpcli ] && [ -z "$(git ls-files .dpcli | head -1)" ] && [ ! -x .dpcli/dpcli ]; then
+  die ".dpcli exists but is not dpcli — move it away and rerun"
+fi
+[ -d .dpcli ] || { [ -n "$(git ls-files .dpcli | head -1)" ] && git checkout -q -- .dpcli; } || true  # deleted from disk
+if [ -d .dpcli/agents ]; then  # own agents dropped into the distribution survive in the project layer
   mkdir -p .dpcli-local/agents
-  for f in "$backup"/agents/*.md; do
+  for f in .dpcli/agents/*.md; do
     [ -e "$f" ] || continue
     n=$(basename "$f")
-    if [ ! -e ".dpcli/agents/$n" ]; then
+    if [ ! -e "$tmp/src/agents/$n" ] && [ ! -e ".dpcli-local/agents/$n" ]; then
       cp "$f" ".dpcli-local/agents/$n"; say "own agent $n → .dpcli-local/agents/"
-    elif ! cmp -s "$f" ".dpcli/agents/$n"; then
-      say "agent $n differs from the new version — not carried over; your old copy: $backup/agents/$n (additions → .dpcli-local/agents/${n%.md}.append.md)"
     fi
   done
-  say "vendored .dpcli replaced by the submodule (old copy: $backup)"
-elif [ -e .dpcli ]; then
-  die ".dpcli exists but is not tracked — move it away and rerun"
-else
-  git submodule add -q "$REPO" .dpcli
-  say "submodule .dpcli added from $REPO"
 fi
-latest=$(git -C .dpcli tag -l 'v*' | sort -V | tail -1)
-[ -n "$latest" ] && git -C .dpcli checkout -q "$latest" && say "version $latest"
+wipe .dpcli && mkdir .dpcli
+for f in $DIST_FILES; do [ -e "$tmp/src/$f" ] && cp -R "$tmp/src/$f" .dpcli/; done
+say "version $latest${REF:+ ($REF)}"
 
-# ---- config: created by init from the example; then language and worktree setup if missing
+# ---- config: created by init from the example; then language; the old submodule worktree setup is dropped
 [ -e dpcli.yml ] || [ -e dpcli.json ] || [ -e dpcli.yaml ] || .dpcli/dpcli init >/dev/null
 python3 - "$LANG_TEXT" "$LANG_COMMITS" <<'PY'
 import json, re, sys
@@ -91,7 +86,8 @@ for name in ("dpcli.json", "dpcli.yml", "dpcli.yaml"):
 if p.suffix == ".json":
     d = json.loads(p.read_text() or "{}")
     d.setdefault("language", {}).update({"text": text, "commits": commits})
-    d.setdefault("worktree", {}).setdefault("setup", "git submodule update --init .dpcli")
+    if d.get("worktree", {}).get("setup") == "git submodule update --init .dpcli":
+        del d["worktree"]["setup"]
     p.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
     sys.exit()
 t = p.read_text()
@@ -100,15 +96,11 @@ if re.search(r"^language:\s*$", t, re.M):
     t = re.sub(r"^language:\s*\n(?:[ \t]+.*\n?)*", lang, t, count=1, flags=re.M)
 else:
     t = t.rstrip("\n") + "\n\n" + lang
-if not re.search(r"^\s+setup:\s*\S", t, re.M):
-    if re.search(r"^worktree:\s*$", t, re.M):
-        t = re.sub(r"^worktree:\s*$", 'worktree:\n  setup: "git submodule update --init .dpcli"', t, count=1, flags=re.M)
-    else:
-        t = t.rstrip("\n") + '\n\nworktree:\n  setup: "git submodule update --init .dpcli"\n'
+t = re.sub(r'^[ \t]+setup:[ \t]*"?git submodule update --init \.dpcli"?[ \t]*\n', "", t, flags=re.M)
 p.write_text(t)
 PY
 .dpcli/dpcli init >/dev/null
-say "init done (agents, skills, process, CLAUDE.md block, permissions, update hook)"
+say "init done (agents, skills, process, CLAUDE.md block, permissions, hooks)"
 
 # ---- fast tools for agents
 missing=()

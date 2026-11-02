@@ -129,11 +129,13 @@ class LocalLayer(unittest.TestCase):
 
 
 class Hook(unittest.TestCase):
-    def test_session_start_update_hook_added_once(self):
+    def test_guard_hooks_added_once_no_auto_update(self):
         p = Project()
         self.addCleanup(p.cleanup)
         p.ok("init")
         p.ok("init")
         st = json.loads((p.root / ".claude" / "settings.json").read_text())
-        cmds = [h["command"] for e in st["hooks"]["SessionStart"] for h in e["hooks"]]
-        self.assertEqual(sum("update --auto" in c for c in cmds), 1)
+        cmds = [h["command"] for ev in st["hooks"].values() for e in ev for h in e["hooks"]]
+        self.assertEqual(sum("bash_guard.py" in c for c in cmds), 1)
+        self.assertEqual(sum("context_guard.py" in c for c in cmds), 1)
+        self.assertFalse(any("update --auto" in c for c in cmds))

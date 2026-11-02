@@ -92,15 +92,15 @@ The coordinator does not read the task's code, diffs or logs. Allowed: `status`,
 ## Agents and models
 | Type | Model | For |
 |---|---|---|
-| `dp-coordinator` | sonnet | module coordinator |
+| `dp-coordinator` | opus | module coordinator |
 | `dp-engineer` | sonnet | code and tests |
 | `dp-researcher` | sonnet | prototypes, measurements, literature |
 | `dp-writer` | sonnet | documents |
 | `dp-mechanic` | haiku | pattern replacements, runs, conflict-free merges |
-| `dp-reviewer` | sonnet | risk-based review; hardest tasks — launch with `model: opus` |
+| `dp-reviewer` | opus | risk-based review |
 | `dp-status` | haiku | status summary for the main session |
 
-Opus only if the design cannot be moved into the plan or a contract. On failure — refine the card first, the model second.
+Executors: opus only if the design cannot be moved into the plan or a contract. On failure — refine the card first, the model second.
 
 ## Agent setup
 - dpcli agents — `.dpcli/agents/*.md` (Claude Code format + `dpcli_role: coordinator|executor|reviewer|status`, `dpcli_review: true|false`); `{{cli}} init` puts them into `.claude/agents/`.
@@ -123,5 +123,5 @@ Every turn pays for the whole session context again.
 The process (agents, templates, rules, permissions, dpcli) improves as you work, but changes only with the user's approval.
 - **Collect — everyone, as you go, one line.** Friction = an extra rework round, waiting for a permission, working around a dpcli command, a rule that hinders or contradicts, wasted tokens/time, a repeated mistake. Executor — the report's `dp_feedback`; reviewer — the review's `harness`; coordinator and main session — `{{cli}} event <m> note --note "harness: <what hurt> → <what to change>"`.
 - **Review — main session, skill `harness-retro`:** on `<m> done`, once per phase or on the user's request: `{{cli}} feedback` (clusters, triage project|dpcli), `{{cli}} stats`, ≤ 3 proposals to the user.
-- **Where fixes go.** Project-specific — `.dpcli-local/` (survives updates). dpcli itself — edits in `.dpcli` leave only via `{{cli}} contribute F-n` (branch, commit, a PR to the dpcli hub or a +1 on a similar one); everyone gets it with the next update.
+- **Where fixes go.** Project-specific — `.dpcli-local/` (survives updates). dpcli itself — never edit `.dpcli` (replaced on reinstall): `{{cli}} feedback show F-n` goes to the user, who fixes dpcli upstream.
 - The user's remarks about the work — into memory (feedback) at once, without waiting for a review.

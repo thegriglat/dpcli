@@ -2,7 +2,7 @@
 
 **Run a team of Claude Code agents on a real codebase — with a journal, acceptance checks, isolated worktrees, and a process that improves itself.**
 
-[![tests](https://github.com/zolotarev/dpcli/actions/workflows/test.yml/badge.svg)](https://github.com/zolotarev/dpcli/actions/workflows/test.yml)
+[![tests](https://github.com/thegriglat/dpcli/actions/workflows/test.yml/badge.svg)](https://github.com/thegriglat/dpcli/actions/workflows/test.yml)
 ![python](https://img.shields.io/badge/python-%E2%89%A53.10-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -39,20 +39,20 @@ Multi-agent coding falls apart in predictable ways: agents retell each other's c
 | Agents wander outside the task | Task cards with `scope` / `dont_touch`; `accept` fails on out-of-scope changes |
 | "Done" that isn't | Executable acceptance checks with thresholds; risk-based fresh-context review |
 | Agents trample each other | One git worktree and branch per task; locks for CPU/GPU-heavy runs |
-| Same frictions every week | Agents log frictions as they work; dpcli clusters them, fixes ship as PRs to this repo, every project gets them on update |
+| Same frictions every week | Agents log frictions as they work; `dpcli feedback` clusters them for a retro; project fixes live in `.dpcli-local/` |
 
-> **Status:** released — the core (journal, cards, acceptance, worktrees, delivery), the installer, the friction ledger (`feedback`, `stats`, `contribute`), auto-update and the hub CI (tests, budgets, AI review and merge, nightly simplification). See [ROADMAP.md](ROADMAP.md).
+> **Status:** released — the core (journal, cards, acceptance, worktrees, delivery), the installer, the friction ledger (`feedback`, `stats`), guard hooks (shell edits, main-session context). See [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
 In the root of an existing git project:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zolotarev/dpcli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/thegriglat/dpcli/main/install.sh | bash
 # options: --lang ru --commit-lang en --tools (install rg, fd, jq, ast-grep) --yes
 ```
 
-The installer adds dpcli as the git submodule `.dpcli`, asks which language agents should write in (and, separately, commit messages), creates `dpcli.yml`, and runs `.dpcli/dpcli init` — agents, skills and the process description land in `.claude/`. Commit the result, then in Claude Code:
+The installer copies dpcli into the folder `.dpcli` (committed with the project, no submodule), asks which language agents should write in (and, separately, commit messages), creates `dpcli.yml`, and runs `.dpcli/dpcli init` — agents, skills and the process description land in `.claude/`. Commit the result; to update, run `bash .dpcli/install.sh`. Then in Claude Code:
 
 ```
 > Read .claude/dpcli-workflow.md and plan module "billing" from docs/plan/billing.md
@@ -81,31 +81,15 @@ flowchart LR
 
 Full reference: [docs/guide.md](docs/guide.md).
 
-## A self-improving network
+## Improving the process
 
-Every project using dpcli is a node; this repository is the hub.
-
-```mermaid
-flowchart LR
-  A[project A] -- PR / issue 'feedback' --> H[(dpcli hub)]
-  B[project B] -- PR / issue 'feedback' --> H
-  H -- CI: tests · budgets · AI review --> V{verdict}
-  V -- accept: merge + tag --> UP[dpcli update in every project]
-  V -- rework / reject + arguments --> A
-  N[nightly: measure & shrink] --> H
-```
-
-1. Agents log frictions as one line while they work.
-2. `dpcli feedback` clusters them; project-specific fixes go into the project's `.dpcli-local/`, dpcli-level fixes become a pull request here via `dpcli contribute` (or a `+1` on an existing one).
-3. CI runs the tests and size budgets, an AI reviewer accepts, asks for rework, or rejects with arguments.
-4. On session start `dpcli update` pulls the new version into every project — and tells each node what happened to its own PRs.
-5. A nightly job measures how heavy dpcli got and opens a PR that makes it smaller.
-
-See [ROADMAP.md](ROADMAP.md) for where this stands and [SECURITY.md](SECURITY.md) for the trust model.
+1. Agents log frictions as one line while they work (`dp_feedback`, `harness: …` notes).
+2. `dpcli feedback` clusters them, `dpcli stats` measures rework and tokens; the `harness-retro` skill proposes ≤ 3 changes to the user.
+3. Project-specific fixes go into the project's `.dpcli-local/` (survives updates); dpcli-level ones come back here as issues or PRs written by a human.
 
 ## Contributing
 
-The easiest way is to use dpcli: frictions become PRs on their own. Manual PRs are welcome too — see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests`.
+PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests`.
 
 ## License
 

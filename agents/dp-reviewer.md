@@ -1,7 +1,7 @@
 ---
 name: dp-reviewer
 description: "{{project}} task reviewer with an empty context — after PASS in `{{cli}} accept` checks an executor's work (types with review) against the card, plan, contracts and the branch diff; writes the accept|rework verdict to the journal (`{{cli}} review`). Doesn't edit, commit or merge. Launched by the module coordinator; for the hardest tasks — with a stronger model."
-model: sonnet
+model: opus
 effort: medium
 disallowedTools: [Agent, Edit, Write, NotebookEdit, WebSearch, WebFetch]
 dpcli_role: reviewer

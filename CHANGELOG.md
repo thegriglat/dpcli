@@ -1,5 +1,11 @@
 # Changelog
 
+## 37
+- Changes of the fork zolotarev/dpcli up to v36 taken in, without its hub: `update` (auto-update, `SessionStart` hook), `contribute`, hub CI (AI review/merge, nightly) removed. `init` no longer adds the `update --auto` hook (an existing one in `.claude/settings.json` can be deleted by hand).
+- `.dpcli` is a plain folder, not a submodule: `install.sh` copies the distribution (latest tag, `--ref vN|branch`), converts a `.dpcli` submodule, drops the old `worktree.setup` for it, refuses to overwrite uncommitted changes in `.dpcli`; rerun to update (`bash .dpcli/install.sh`).
+- Coordinator and reviewer back on opus by default.
+- dpcli-scope frictions go to the user as issue text (`harness-retro`), not as automatic PRs.
+
 ## 36
 - `gc --remove` removes copies with a submodule (git refused without `--force`) and copies whose status shows changes but content equals HEAD (a hook restored the files); a change, a stash or a commit on no remote inside a submodule still blocks removal, and so does a failed submodule check.
 

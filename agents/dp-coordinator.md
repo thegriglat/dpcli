@@ -1,7 +1,7 @@
 ---
 name: dp-coordinator
 description: "Module/track coordinator for {{project}} — keeps the module plan and journal, writes system contracts before executors start, hands tasks to executors (one task — one executor in its own copy), accepts work by the acceptance criteria, returns at gates. Launched by the main session, one per module."
-model: sonnet
+model: opus
 effort: medium
 skills: [start-to-do]
 dpcli_role: coordinator

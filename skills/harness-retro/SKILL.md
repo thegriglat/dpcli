@@ -1,6 +1,6 @@
 ---
 name: harness-retro
-description: "Review the {{project}} process (harness) — cluster frictions with `dpcli feedback`, measure with `dpcli stats` and token usage, propose ≤ 3 improvements to the user, apply the approved: project ones in .dpcli-local/, dpcli ones as a PR to the dpcli hub. Used by the main session on `<m> done`, once per phase, or when the user asks to improve the process or cut costs."
+description: "Review the {{project}} process (harness) — cluster frictions with `dpcli feedback`, measure with `dpcli stats` and token usage, propose ≤ 3 improvements to the user, apply the approved: project ones in .dpcli-local/, dpcli ones as an issue text for the user. Used by the main session on `<m> done`, once per phase, or when the user asks to improve the process or cut costs."
 ---
 
 # harness-retro — process review
@@ -12,6 +12,6 @@ Cheap: one session, no subagents, only the commands below. Don't read project co
 3. **Propose to the user** as one list, ≤ 3 items, most frequent/expensive first: `F-n ×count [scope] → change (file) → gain/cost`. Change nothing without approval.
 4. **Apply the approved.**
    - project: edit `.dpcli-local/` (`workflow.md`, `claude-md.md`, `agents/<name>.append.md`, `skills/`), `{{cli}} init`, commit `.dpcli-local/ .claude/ CLAUDE.md`, then `{{cli}} feedback fix F-n --where .dpcli-local/<file>`;
-   - dpcli: in `.dpcli` — a test reproducing the friction, the change, `VERSION` +1, a `CHANGELOG.md` line, then `{{cli}} contribute F-n` — it makes the `improve/F-n-*` branch, the commit and a PR (origin or a fork), or a +1 on a similar open one. If it hurts now, add a temporary workaround in `.dpcli-local/` marked `until: <PR url>`. `dpcli update` reports the verdict later.
+   - dpcli: don't edit `.dpcli` (it is replaced on reinstall). Give the user the cluster (`{{cli}} feedback show F-n`) as an anonymized issue text for the dpcli repository; if it hurts now, a temporary workaround in `.dpcli-local/` marked `until: F-n`. After the fixed dpcli is installed — `{{cli}} feedback fix F-n --where "dpcli vN"`.
    - rejected by the user — `{{cli}} feedback wontfix F-n --why "…"`.
 5. **Record.** `{{cli}} decide harness "<change>" --by user --why "F-n"` per decision.

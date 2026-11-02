@@ -3,11 +3,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: branch to test (used for PRs opened by workflows)
-        required: true
 permissions:
   contents: read
 jobs:
@@ -20,7 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.ref || '' }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -28,6 +22,3 @@ jobs:
       - run: python3 -m unittest discover -s tests
       - name: lightness budgets
         run: python3 tools/metrics.py --check
-      - name: PR gate (version, changelog, anonymity, size)
-        if: github.event_name != 'push'
-        run: python3 tools/pr_checks.py origin/main

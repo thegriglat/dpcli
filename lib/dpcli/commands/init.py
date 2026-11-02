@@ -352,10 +352,8 @@ class Init:
             raise DpError(".claude/settings.json: object expected")
         perm = f"Bash({self.cli} *)"
         allow = data.setdefault("permissions", {}).setdefault("allow", [])
-        hook = f"{self.cli} update --auto"
-        starts = data.setdefault("hooks", {}).setdefault("SessionStart", [])
-        has_hook = any(hook in str(h.get("command", "")) for e in starts if isinstance(e, dict) for h in e.get("hooks") or [])
-        # fail open: without the script (a copy without the submodule) python would exit 2 = "blocked" for every call
+        data.setdefault("hooks", {})
+        # fail open: without the script (a copy without .dpcli) python would exit 2 = "blocked" for every call
         def script(name):
             return (f'f="$CLAUDE_PROJECT_DIR/{relp(DIST / "hooks" / name, self.root)}"; '
                     f'[ -f "$f" ] || exit 0; exec python3 "$f"')
@@ -364,15 +362,13 @@ class Init:
             return any(name in str(h.get("command", "")) for e in data["hooks"].setdefault(event, [])
                        if isinstance(e, dict) for h in e.get("hooks") or [])
         has_guard, has_ctx = has("PreToolUse", "bash_guard.py"), has("UserPromptSubmit", "context_guard.py")
-        add = ([perm] if perm not in allow else []) + ([] if has_hook else ["SessionStart: update --auto"]) \
+        add = ([perm] if perm not in allow else []) \
             + ([] if has_guard else ["PreToolUse: bash_guard"]) + ([] if has_ctx else ["UserPromptSubmit: context_guard"])
         if not add:
             self.row(".claude/settings.json", "unchanged", perm)
             return
         if perm not in allow:
             allow.append(perm)
-        if not has_hook:
-            starts.append({"hooks": [{"type": "command", "command": hook}]})
         if not has_guard:  # file edits through the shell → Edit/Write (agents made them by the hundred)
             data["hooks"]["PreToolUse"].append({"matcher": "Bash", "hooks": [{"type": "command", "command": script("bash_guard.py")}]})
         if not has_ctx:  # the main session's context grows unnoticed: it paid most of a module's tokens
