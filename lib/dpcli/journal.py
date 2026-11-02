@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from . import config, gitx
-from .util import DpError, append_jsonl, lang_commit, now, pretty, read_json, read_jsonl, write_json
+from .util import CHAINED, DpError, append_jsonl, chain_hash, lang_commit, now, pretty, read_json, read_jsonl, write_json
 
 LIFECYCLE = ["created", "started", "reported", "checked", "reviewed", "accepted", "merged", "blocked", "cancelled"]
 EVENT_KINDS = ["started", "reported", "accepted", "merged", "blocked", "cancelled", "note"]
@@ -175,6 +175,41 @@ def ensure_module(mod, home, **kw):
         write_json(p, meta)
     (home / "tasks").mkdir(parents=True, exist_ok=True)
     (home / "events.jsonl").touch()
+
+
+def integrity(home):
+    """Journal lines not written by dpcli: a broken `_h` chain (a line edited, removed or inserted), lines without `_h`
+    after marked ones (appended by hand), unparsed lines, and lines removed since the last commit. -> [problem]."""
+    out = []
+    for name in CHAINED:
+        f = home / name
+        if not f.is_file():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        prev, marked, bad = "", False, []
+        for i, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                bad.append(f"{i} unparsed")
+                prev = ""
+                continue
+            h = r.get("_h") if isinstance(r, dict) else None
+            if h:
+                if h != chain_hash(prev, r):
+                    bad.append(f"{i} changed (or a line before it removed/inserted)")
+                marked = True
+            elif marked:
+                bad.append(f"{i} without dpcli mark (written by hand?)")
+            prev = h or ""
+        if bad:
+            out.append(f"{name}: line " + "; ".join(bad[:3]) + (f"; +{len(bad) - 3} more" if len(bad) > 3 else ""))
+        head = gitx.gitr("show", f"HEAD:./{name}", cwd=home)
+        if head.returncode == 0 and head.stdout and not text.startswith(head.stdout):
+            out.append(f"{name}: lines removed or changed since the last commit (git diff -- {name})")
+    return out
 
 
 def events(home):

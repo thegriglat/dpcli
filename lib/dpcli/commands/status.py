@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from .. import config, gitx
-from ..journal import FINAL, all_modules, module_meta, question_answers, state_label, task_cards, task_states
+from ..journal import FINAL, all_modules, integrity, module_meta, question_answers, state_label, task_cards, task_states
 from ..journal import events as journal_events
 from ..util import CLI, DpError, age, pretty, read_jsonl, rel, short
 
@@ -24,6 +24,7 @@ def module_status(mod, home, a, lines):
     last_ev = f" | event {age(evs[-1]['t'])} ago" if evs else ""
     lines.append(f"{mod}: " + " ".join(f"{k} {v}" for k, v in sorted(cnt.items())) + last_ev +
                  (f" | {meta['branch']} {mlast}" if mlast else "") + (f" @ {rel(mwt)}" if mwt else ""))
+    lines += [f"  ⚠ journal {w} — not written by dpcli" for w in integrity(home)]
     stale_min = a.stale
     main = config.main_branch()
     for tid, s in st.items():

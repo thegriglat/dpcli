@@ -7,7 +7,7 @@ from pathlib import Path
 from .. import config, gitx
 
 from ..journal import (EVENT_KINDS, ID_RE, add_event, all_modules, by_default, ensure_module, find_task, module_home,
-                       open_questions, question_answers, resolve_target, revoke_event)
+                       integrity, open_questions, question_answers, resolve_target, revoke_event)
 from ..journal import events as journal_events
 from ..util import CLI, DpError, age, append_jsonl, hm, now, read_jsonl, rel, short
 from .plan import DEFAULT_SECTION, plan_edit
@@ -132,6 +132,8 @@ def cmd_inbox(a):
         if e.get("t", "") >= since and e.get("ev") in ("plan", "note") and e.get("by") != reader:
             items.append((e["t"], f"{'plan edit' if e['ev'] == 'plan' else 'note'} ({e.get('by', '-')}): {e.get('note', '')}"))
     items.sort()
+    for w in integrity(home):
+        print(f"⚠ journal {w} — not written by dpcli; tell the main session")
     if not items:
         print(f"{a.module}: nothing new")
     else:
@@ -194,7 +196,7 @@ def cmd_answer(a):
 
 
 def _key(r):
-    return json.dumps(r, sort_keys=True, ensure_ascii=False)
+    return json.dumps({k: v for k, v in r.items() if k != "_h"}, sort_keys=True, ensure_ascii=False)
 
 
 def cmd_adopt(a):

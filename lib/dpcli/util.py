@@ -51,15 +51,44 @@ def write_json(p, obj):
     p.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
 
 
+CHAINED = ("events.jsonl", "decisions.jsonl")  # module journal files: every record dpcli appends carries `_h`
+
+
+def chain_hash(prev, obj):
+    """`_h` of a journal record: hash of the previous record's `_h` and this record. An edited, removed or inserted
+    line breaks the chain; a line appended by hand has no `_h` (journal.integrity)."""
+    import hashlib
+    body = json.dumps({k: v for k, v in obj.items() if k != "_h"}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1((prev + body).encode()).hexdigest()[:10]
+
+
+def _last_h(text):
+    for line in reversed(text.splitlines()):
+        if line.strip():
+            try:
+                return json.loads(line).get("_h") or ""
+            except (json.JSONDecodeError, AttributeError):
+                return ""
+    return ""
+
+
 def append_jsonl(p, obj):
     p = Path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(obj, ensure_ascii=False) + "\n"
-    fd = os.open(p, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    chained = p.name in CHAINED
+    fd = os.open(p, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o644)
     try:
-        os.write(fd, line.encode())
+        if chained:
+            try:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)  # parallel agents append to one journal: read prev + write atomically
+            except (ImportError, OSError):
+                pass
+            obj = {k: v for k, v in obj.items() if k != "_h"}
+            obj["_h"] = chain_hash(_last_h(p.read_text(encoding="utf-8", errors="replace")), obj)
+        os.write(fd, (json.dumps(obj, ensure_ascii=False) + "\n").encode())
     finally:
-        os.close(fd)
+        os.close(fd)  # releases the lock
 
 
 def read_jsonl(p):

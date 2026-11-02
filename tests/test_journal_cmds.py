@@ -120,5 +120,62 @@ class Adopt(unittest.TestCase):
         self.assertIn("module journal itself", err)
 
 
+class Integrity(Base):
+    def setUp(self):
+        super().setUp()
+        for k in ("started", "blocked"):
+            self.p.ok("event", "PF-1", k, "--note", k)
+        self.p.ok("decide", "pf", "q?", "--ask")
+        self.p.commit_all("journal")
+        self.ev = self.home / "events.jsonl"
+
+    def warn(self):
+        return [ln for ln in self.p.ok("status", "pf").splitlines() if "⚠ journal" in ln]
+
+    def test_clean_journal_no_warning_and_chain_present(self):
+        self.assertEqual(self.warn(), [])
+        self.assertTrue(all("_h" in json.loads(x) for x in self.ev.read_text().splitlines()))
+        self.assertNotIn("⚠ journal", self.p.ok("inbox", "pf", "--by", "main"))
+
+    def test_edited_line_detected(self):
+        lines = self.ev.read_text().splitlines()
+        lines[1] = lines[1].replace('"started"', '"accepted"')
+        self.ev.write_text("\n".join(lines) + "\n")
+        w = self.warn()
+        self.assertTrue(any("events.jsonl: line 2 changed" in x for x in w), w)
+        self.assertTrue(any("since the last commit" in x for x in w), w)
+        self.assertIn("⚠ journal", self.p.ok("inbox", "pf", "--by", "main"))
+
+    def test_removed_line_detected_even_committed(self):
+        lines = self.ev.read_text().splitlines()
+        del lines[1]
+        self.ev.write_text("\n".join(lines) + "\n")
+        self.p.commit_all("drop an event")
+        w = self.warn()
+        self.assertTrue(any("line 2 changed (or a line before it removed/inserted)" in x for x in w), w)
+
+    def test_hand_appended_line_detected_then_dpcli_continues(self):
+        with open(self.ev, "a") as f:
+            f.write(json.dumps({"t": "2030-01-01T00:00:00", "by": "x", "task": "PF-1", "ev": "accepted"}) + "\n")
+        self.p.ok("event", "PF-1", "note", "--note", "after")  # dpcli's own lines stay valid after it
+        w = self.warn()
+        self.assertEqual(len(w), 1, w)
+        self.assertIn("without dpcli mark", w[0])
+
+    def test_parallel_appends_keep_the_chain(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(12) as ex:
+            codes = list(ex.map(lambda i: self.p.run("event", "PF-1", "note", "--note", f"n{i}")[0], range(12)))
+        self.assertEqual(codes, [0] * 12)
+        self.assertEqual([x for x in self.warn() if "since the last commit" not in x], [])
+
+    def test_legacy_journal_without_marks_is_fine(self):
+        legacy = [json.dumps({k: v for k, v in json.loads(x).items() if k != "_h"}) for x in self.ev.read_text().splitlines()]
+        self.ev.write_text("\n".join(legacy) + "\n")
+        self.p.commit_all("legacy")
+        self.p.ok("event", "PF-1", "note", "--note", "new")
+        self.assertEqual(self.warn(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
