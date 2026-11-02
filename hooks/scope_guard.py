@@ -32,8 +32,9 @@ def verdict(path):
     pd = re.escape(config.plan_dir().strip("/"))
     if re.fullmatch(rf"{pd}/[^/]+/((events|decisions)\.jsonl|module\.json|tasks/[^/]+\.json)", rel):
         return (f"dpcli: {rel} is the module journal — written only by dpcli commands: cards `{cli} task new|set` "
-                f"(--check NAME CMD EXPECT replaces a check, scope+=…), reports — edit your <log_dir>/<ID>/report.json and run "
-                f"`{cli} report <ID>` again (it replaces the report), events `{cli} event`, decisions `{cli} decide`. A command is missing — say so in "
+                f"(--check NAME CMD EXPECT replaces a check, scope+=…), reports `{cli} report <ID> --set field=value`, a wrong "
+                f"event `{cli} event <ID> revoke --note why`, a journal from another copy `{cli} adopt <m>`, decisions "
+                f"`{cli} decide`. A command is missing — say so in "
                 f"`harness: …`, don't edit the journal.")
     br = gitx.git("branch", "--show-current")
     f = config.task_branch_fields(br) if br else None

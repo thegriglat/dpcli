@@ -7,6 +7,7 @@ from ..journal import (add_event, all_modules, by_default, home_root, module_hom
                        task_states)
 from ..mdsec import find_section, section_body, section_end, toc
 from ..mdsec import headings as plan_headings
+from ..journal import events as journal_events
 from ..util import CLI, DpError, lang_commit, lang_text, read_json, read_jsonl, rel, short
 
 DEFAULT_SECTION = lang_text("User decisions", "Решения пользователя")
@@ -133,7 +134,7 @@ def cmd_render(a):
     cards = task_cards(home)
     reps = {p.name[:-12]: read_json(p) for p in (home / "tasks").glob("*.report.json")}
     revs = {p.name[:-12]: read_json(p) for p in sorted((home / "tasks").glob("*.review.json"))}
-    evs = read_jsonl(home / "events.jsonl")
+    evs = journal_events(home)
     decs = read_jsonl(home / "decisions.jsonl")
     T = lang_text
     L = [MARK, T(f"# Module journal \"{a.module}\"", f"# Журнал модуля «{a.module}»"), "",

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .. import agents, config, copies, gitx, reexec
 from ..journal import add_event, by_default, expect_arg, find_task
+from ..journal import events as journal_events
 from ..util import CLI, DpError, die, now, read_json, read_jsonl, rel, short, write_json
 from .jobs import job_start, qualify, tmux_args, tmux_opts
 
@@ -289,7 +290,7 @@ def expected_seconds(logdir, home, tid, checks, jobs):
     longest one when run in parallel."""
     store = read_json(logdir / "results.json") or {}
     last = {}
-    for e in read_jsonl(home / "events.jsonl"):
+    for e in journal_events(home):
         if e.get("task") == tid and isinstance(e.get("durs"), dict):
             last.update(e["durs"])
     durs = [float((store.get(c.get("name")) or {}).get("dur") or last.get(c.get("name")) or 0) for c in checks]

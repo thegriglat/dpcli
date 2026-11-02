@@ -236,6 +236,8 @@ Commands run via `bash -c` in the task's copy (if there is one; `--here` — in 
 
 ```
 .dpcli/dpcli event <ID|module> started|reported|accepted|merged|blocked|cancelled|note [--commit h] [--note "…"]
+.dpcli/dpcli event <ID> revoke --note "why" [--of KIND]   # cancel a wrong event (appended; readers skip the revoked one)
+.dpcli/dpcli adopt <module> [--from DIR] [--dry] [--keep]   # merge a stray journal written in another copy into the module journal
 .dpcli/dpcli decide <module> "decision" --by user|coordinator|main [--why "…"] [--task ID] [--plan [SECTION]]
 .dpcli/dpcli decide <module> "question" --ask             # gate: question to the user → Q1
 .dpcli/dpcli decide <module> "answer" --by user --answers Q1
@@ -252,6 +254,7 @@ Commands run via `bash -c` in the task's copy (if there is one; `--here` — in 
 ```
 .dpcli/dpcli accept <ID> [--only NAME] [--here|--cwd DIR] [-j 4] [--commit h] [--dry] [--no-accept] [--no-review] [--full] [--bg [--timeout SEC]] [--no-tmux] [--tmux-session S]
 .dpcli/dpcli report <ID> [file|-]  |  report <ID> --show [--full]  |  report --template [ID]
+.dpcli/dpcli report <ID> --set status=done commits+="abc1 fix" not_done-="x"   # amend the stored report
 .dpcli/dpcli review <ID> --verdict accept|rework --from r.json|-  |  review <ID> --note "summary"  |  review <ID> --show [--full]  |  review --template
 ```
 

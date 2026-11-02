@@ -8,6 +8,7 @@ from .. import agents, config, copies, gitx
 from ..journal import (ID_RE, add_event, addenda, all_modules, by_default, check_area, check_code, ensure_module, expect_arg, home_root,
                        find_task, module_home, module_meta, reserved_codes, task_cards)
 from .accept import check_bounds
+from ..journal import events as journal_events
 from ..util import CLI, DpError, Parser, hm, lang_commit, now, pretty, read_json, read_jsonl, rel, short, subgroup, write_json
 
 CARD_TEMPLATE = {
@@ -358,7 +359,7 @@ def cmd_task_show(a):
         print(json.dumps(card, ensure_ascii=False, indent=2))
         return
     if a.diff:
-        evs = [e for e in read_jsonl(home / "events.jsonl") if e.get("task") == a.id and e.get("ev") == "edited"]
+        evs = [e for e in journal_events(home) if e.get("task") == a.id and e.get("ev") == "edited"]
         if not evs:
             print(f"{a.id}: card unchanged since creation")
         for e in evs:
@@ -392,7 +393,7 @@ def cmd_task_show(a):
         shown = adds if full else adds[-5:]
         L.append(f"Addenda since handout ({len(adds)}" + (f", older {len(adds) - len(shown)}: --full" if len(shown) < len(adds) else "") + "):")
         L += [f"  ! {hm(e['t'])} ({e.get('by', '-')}): {e['note']}" for e in shown]
-    nedit = sum(1 for e in read_jsonl(home / "events.jsonl") if e.get("task") == a.id and e.get("ev") == "edited")
+    nedit = sum(1 for e in journal_events(home) if e.get("task") == a.id and e.get("ev") == "edited")
     if nedit:
         L.append(f"Card edited {nedit} time(s) ({CLI} task show {a.id} --diff)")
     L += general_rules()

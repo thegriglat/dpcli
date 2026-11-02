@@ -19,6 +19,7 @@ from pathlib import Path
 from .. import config, gitx
 from ..journal import (FINAL, add_event, all_modules, by_default, check_area, guard_main, journal_commit, module_base,
                        module_meta, task_cards, task_states)
+from ..journal import events as journal_events
 from ..util import CLI, DpError, lang_commit, lang_text, now, pretty, read_json, read_jsonl, session_line
 from .feedback import keep_items
 
@@ -344,7 +345,7 @@ def cmd_rerender(a, rel_dir):
         return
     # journal link in md only if archive tags are enabled: otherwise ref exists only in this copy
     made, _ = write_md(a.module, home, top / rel_dir, top, area, ref if archive_tag(a.module) else None)
-    last = max((str(e.get("t", "")) for e in read_jsonl(home / "events.jsonl")), default="")[:10] or None
+    last = max((str(e.get("t", "")) for e in journal_events(home)), default="")[:10] or None
     shutil.rmtree(tmp, ignore_errors=True)
     closed = close_docs(top, a.module, area, last)  # closing date is the last journal entry, not the rebuild day
     reindex(top)

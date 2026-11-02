@@ -137,6 +137,8 @@ def cmd_report(a):
             L.append("dpcli: " + short(r["dp_feedback"], 200))
         print("\n".join(L))
         return
+    if a.set:
+        return amend_report(a, home, card, p)
     from_file = not (a.file == "-" or (a.file is None and stdin_redirected()))  # explicit input beats a stale file
     if not from_file:
         src = sys.stdin.read()
@@ -164,6 +166,52 @@ def cmd_report(a):
     add_event(home, a.id, "reported", r["by"], note=f"{r['status']}: {short(r['summary'], 120)}", commits=commits,
               dp_feedback=r.get("dp_feedback", ""))
     print(f"{a.id}: report {r['status']} → {rel(p)}")
+
+
+def amend_report(a, home, card, p):
+    """report ID --set field=value | field+=item | field-=item …: change the stored report without rewriting JSON;
+    validated like a new report; the per-task file gets the result too (a later full `report` starts from it)."""
+    import re
+
+    from .task import _set_value
+    r = read_json(p)
+    if not r:
+        raise DpError(f"{a.id}: no report yet — {CLI} report {a.id} first")
+    r = {k: v for k, v in r.items() if k not in ("t", "by")}
+    keys = []
+    for op in a.set:
+        m = re.match(r"^([A-Za-z_]\w*)(\+=|-=|=)(.*)$", op, re.S)
+        if not m:
+            raise DpError(f"«{op}»: expected field=value | field+=item | field-=item")
+        key, kind, raw = m.groups()
+        if key in ("id", "t", "by"):
+            raise DpError(f"{key} cannot be changed")
+        val = _set_value(raw)
+        if kind == "=":
+            r[key] = [val] if isinstance(r.get(key), list) and not isinstance(val, list) else val
+        else:
+            lst = r.get(key) if r.get(key) is not None else []
+            if not isinstance(lst, list):
+                raise DpError(f"{key} is not a list, «{kind}» does not apply")
+            same = (lambda x: x == val or (isinstance(x, dict) and isinstance(val, (dict, str))
+                                           and x.get("name") == (val.get("name") if isinstance(val, dict) else val)))
+            keep = [x for x in lst if not same(x)]
+            if kind == "-=" and len(keep) == len(lst):
+                raise DpError(f"{key}: «{raw}» not found")
+            r[key] = keep + ([val] if kind == "+=" else [])  # += a check with the same name replaces it
+        keys.append(key)
+    errs = validate_report(r, card)
+    if errs:
+        raise DpError(f"{a.id}: report rejected: " + "; ".join(errs))
+    rf = report_file(a.id)
+    if rf.parent.is_dir() or rf.is_file():
+        write_json(rf, r)
+    r["t"] = now()
+    r["by"] = by_default(a)
+    write_json(p, r)
+    add_event(home, a.id, "reported", r["by"], note=f"{r['status']} (amended: {', '.join(dict.fromkeys(keys))}): "
+              f"{short(r.get('summary', ''), 100)}", commits=[c.split()[0] for c in r.get("commits", []) if c])
+    print(f"{a.id}: report {r['status']} amended ({', '.join(dict.fromkeys(keys))}) → {rel(p)}")
 
 
 REVIEW_TEMPLATE = {
@@ -277,6 +325,8 @@ def register(sp):
     q.add_argument("id", nargs="?"); q.add_argument("file", nargs="?")
     q.add_argument("--show", action="store_true"); q.add_argument("--template", action="store_true")
     q.add_argument("--full", action="store_true"); q.add_argument("--by")
+    q.add_argument("--set", nargs="+", metavar="OP", help="amend the stored report: field=value | field+=item | field-=item "
+                   "(JSON or text; checks+='{\"name\":…,\"value\":…,\"pass\":true}' replaces that check)")
     q.set_defaults(func=cmd_report)
 
     q = sp.add_parser("review", help="reviewer verdict: review ID --verdict accept|rework --from r.json | --note … | --show | --template")

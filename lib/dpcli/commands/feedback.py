@@ -4,6 +4,7 @@ import statistics
 
 from .. import config
 from ..journal import all_modules, task_cards
+from ..journal import events as journal_events
 from ..util import CLI, DpError, append_jsonl, now, read_json, read_jsonl, short
 
 # dpcli commands and frequent topics: unclustered frictions are grouped by the first one mentioned
@@ -29,7 +30,7 @@ def items(since="", module=None):
     for mod, home in all_modules().items():
         if module and mod != module:
             continue
-        for e in read_jsonl(home / "events.jsonl"):
+        for e in journal_events(home):
             t = e.get("t", "")
             if t < since:
                 continue
@@ -169,7 +170,7 @@ def cmd_stats(a):
     for mod, home in mods.items():
         if a.module and mod != a.module:
             continue
-        evs = [e for e in read_jsonl(home / "events.jsonl") if e.get("t", "") >= (a.since or "")]
+        evs = [e for e in journal_events(home) if e.get("t", "") >= (a.since or "")]
         created, accepted, rework, tasks = {}, {}, 0, set()
         for e in evs:
             tid = e.get("task")

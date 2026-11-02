@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .. import config, gitx
 from ..journal import FINAL, all_modules, module_meta, question_answers, state_label, task_cards, task_states
+from ..journal import events as journal_events
 from ..util import CLI, DpError, age, pretty, read_jsonl, rel, short
 
 
@@ -19,7 +20,7 @@ def module_status(mod, home, a, lines):
     for s in st.values():
         cnt[state_label(s)] = cnt.get(state_label(s), 0) + 1
     mwt, mlast = gitx.branch_info(meta["branch"], wt)
-    evs = read_jsonl(home / "events.jsonl")
+    evs = journal_events(home)
     last_ev = f" | event {age(evs[-1]['t'])} ago" if evs else ""
     lines.append(f"{mod}: " + " ".join(f"{k} {v}" for k, v in sorted(cnt.items())) + last_ev +
                  (f" | {meta['branch']} {mlast}" if mlast else "") + (f" @ {rel(mwt)}" if mwt else ""))
@@ -102,7 +103,7 @@ def status_since(a):
     for mod, home in mods.items():
         cards = task_cards(home)
         brs = [config.module_branch(mod)] + [c["branch"] for c in cards.values() if c and c.get("branch")]
-        evs = [e for e in read_jsonl(home / "events.jsonl") if e.get("t", "") >= iso]
+        evs = [e for e in journal_events(home) if e.get("t", "") >= iso]
         qs = [q for q in read_jsonl(home / "decisions.jsonl") if q.get("kind") == "question" and q.get("t", "") >= iso]
         blines, ncom = [], 0
         for b in dict.fromkeys(brs):
@@ -149,7 +150,7 @@ def cmd_digest(a):
                 dec.append(f"- [{mod}] {d['text']}" + (f" — {d['why']}" if d.get("why") else "")
                            + (f" (answer to {d['answers']})" if d.get("answers") else ""))
         cards = task_cards(home)
-        for e in read_jsonl(home / "events.jsonl"):
+        for e in journal_events(home):
             if e.get("t", "") < iso:
                 continue
             if e.get("ev") == "accepted" and e.get("task"):

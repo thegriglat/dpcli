@@ -177,6 +177,34 @@ def ensure_module(mod, home, **kw):
     (home / "events.jsonl").touch()
 
 
+def events(home):
+    """events.jsonl without revoked events: a `revoked` event (append-only, by `event <ID> revoke`) names the event it
+    cancels by {t, ev, by}; the revoke itself stays (log shows it)."""
+    evs = read_jsonl(home / "events.jsonl")
+    out = []
+    for e in evs:
+        of = e.get("of") if e.get("ev") == "revoked" else None
+        if isinstance(of, dict):
+            for i in range(len(out) - 1, -1, -1):
+                x = out[i]
+                if x.get("task") == e.get("task") and all(x.get(k) == of.get(k) for k in ("t", "ev", "by")):
+                    del out[i]
+                    break
+        out.append(e)
+    return out
+
+
+def revoke_event(home, task, by, note, kind=None):
+    """Append a `revoked` event for the task's last live event (of `kind` if given). -> the revoked event."""
+    live = [e for e in events(home) if e.get("task") == task and e.get("ev") not in ("revoked", "created")
+            and (kind is None or e.get("ev") == kind)]
+    if not live:
+        raise DpError(f"{task}: no {kind + ' ' if kind else ''}event to revoke")
+    x = live[-1]
+    add_event(home, task, "revoked", by, note=note, of={k: x.get(k) for k in ("t", "ev", "by")})
+    return x
+
+
 def add_event(home, task, kind, by, note="", commits=None, **extra):
     ev = {"t": now(), "by": by, "task": task, "ev": kind}
     if commits:
@@ -211,7 +239,7 @@ def task_cards(home):
 def task_states(home):
     """{ID: {status, t, last_t, commits[], note}} from events."""
     st = {}
-    for ev in read_jsonl(home / "events.jsonl"):
+    for ev in events(home):
         tid = ev.get("task")
         if not tid:
             continue
@@ -239,7 +267,7 @@ def state_label(s):
 
 def addenda(home, tid):
     """Coordinator addenda to an already issued task: note events with addendum."""
-    return [e for e in read_jsonl(home / "events.jsonl") if e.get("task") == tid and e.get("addendum")]
+    return [e for e in events(home) if e.get("task") == tid and e.get("addendum")]
 
 
 def open_questions(home):

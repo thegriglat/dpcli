@@ -1,10 +1,15 @@
-"""event, decide, log, inbox, questions, answer."""
+"""event, decide, log, inbox, questions, answer, adopt."""
 import argparse
+import json
 import os
+from pathlib import Path
+
+from .. import config, gitx
 
 from ..journal import (EVENT_KINDS, ID_RE, add_event, all_modules, by_default, ensure_module, find_task, module_home,
-                       open_questions, question_answers, resolve_target)
-from ..util import CLI, DpError, age, append_jsonl, hm, now, read_jsonl, short
+                       open_questions, question_answers, resolve_target, revoke_event)
+from ..journal import events as journal_events
+from ..util import CLI, DpError, age, append_jsonl, hm, now, read_jsonl, rel, short
 from .plan import DEFAULT_SECTION, plan_edit
 
 
@@ -12,6 +17,14 @@ def cmd_event(a):
     mod, home, task = resolve_target(a.target)
     if task is None and a.kind != "note":
         raise DpError("for a module only note; for a task use ID")
+    if a.kind == "revoke":
+        if not a.note:
+            raise DpError("revoke needs --note \"why\"")
+        x = revoke_event(home, task, by_default(a), a.note, a.of)
+        print(f"{task}: revoked {x.get('ev')} of {str(x.get('t', ''))[:16]} by {x.get('by')} (the journal keeps both)")
+        return
+    if a.of:
+        raise DpError("--of is for revoke")
     add_event(home, task, a.kind, by_default(a), note=a.note or "", commits=a.commit)
     print(f"{task or mod}: {a.kind}")
 
@@ -51,7 +64,7 @@ def mark(e):
 
 def cmd_log(a):
     mod, home, task = resolve_target(a.target)
-    rows = [(e.get("t", ""), "ev", e) for e in read_jsonl(home / "events.jsonl") if task is None or e.get("task") == task]
+    rows = [(e.get("t", ""), "ev", e) for e in journal_events(home) if task is None or e.get("task") == task]
     if not a.no_decisions:
         rows += [(d.get("t", ""), "dec", d) for d in read_jsonl(home / "decisions.jsonl") if task is None or d.get("task") == task]
     rows.sort(key=lambda r: r[0])
@@ -59,6 +72,8 @@ def cmd_log(a):
         if kind == "ev":
             c = (" " + ",".join(e["commits"])) if e.get("commits") else ""
             n = (" — " + short(e["note"], 100 if not a.full else 10000)) if e.get("note") else ""
+            if isinstance(e.get("of"), dict):
+                c = f" {e['of'].get('ev')} of {str(e['of'].get('t', ''))[5:16].replace('T', ' ')}"
             print(f"{t[5:16].replace('T', ' ')} {e.get('task') or '·'} {e['ev']} ({e.get('by', '-')}){c}{n}{mark(e)}")
         else:
             tag = ("question " + str(e.get("id", ""))) if e.get("kind") == "question" else (
@@ -75,7 +90,7 @@ def inbox_task(a):
     stamp_p = home / f".read_{reader}.{a.module}"
     since = stamp_p.read_text().strip() if stamp_p.exists() else ""
     items = []
-    for e in read_jsonl(home / "events.jsonl"):
+    for e in journal_events(home):
         if e.get("task") != a.module or e.get("t", "") <= since or e.get("by") == reader:
             continue
         if e.get("addendum"):
@@ -113,7 +128,7 @@ def cmd_inbox(a):
         else:
             what = f"decision: {d['text']}"
         items.append((d["t"], f"{what}" + (f" — {d['why']}" if d.get("why") else "") + f" ({d.get('by', '-')})"))
-    for e in read_jsonl(home / "events.jsonl"):
+    for e in journal_events(home):
         if e.get("t", "") >= since and e.get("ev") in ("plan", "note") and e.get("by") != reader:
             items.append((e["t"], f"{'plan edit' if e['ev'] == 'plan' else 'note'} ({e.get('by', '-')}): {e.get('note', '')}"))
     items.sort()
@@ -178,10 +193,75 @@ def cmd_answer(a):
     print(f"{mod}: answer to {q['id']} recorded ({d['by']}) → {CLI} inbox {mod}")
 
 
+def _key(r):
+    return json.dumps(r, sort_keys=True, ensure_ascii=False)
+
+
+def cmd_adopt(a):
+    """A stray journal of module m (written in another copy, e.g. before the module copy existed) merged into the module
+    journal: missing events and decisions appended in time order (question ids renumbered on collision), missing task
+    files copied; the stray directory is then removed (staged with git rm if tracked). Never overwrites."""
+    import shutil
+    home = module_home(a.module)
+    src = Path(a.from_).expanduser() if a.from_ else gitx.toplevel() / config.plan_dir() / a.module
+    if not (src / "events.jsonl").exists() and not (src / "decisions.jsonl").exists():
+        raise DpError(f"no stray journal at {rel(src)} (events.jsonl / decisions.jsonl)")
+    if src.resolve() == home.resolve():
+        raise DpError(f"{rel(src)} is the module journal itself; run adopt in the copy that has the stray one or --from DIR")
+    if not (home / "module.json").exists():
+        raise DpError(f"{a.module}: no module journal to adopt into ({rel(home)}); {CLI} module new {a.module} first")
+    clash = [f.name for f in sorted((src / "tasks").glob("*")) if f.is_file() and (home / "tasks" / f.name).exists()
+             and (home / "tasks" / f.name).read_bytes() != f.read_bytes()]
+    if clash:
+        raise DpError(f"task files differ in both journals: {', '.join(clash)} — keep one by hand, then adopt")
+    have = {_key(e) for e in read_jsonl(home / "events.jsonl")}
+    new_ev = sorted((e for e in read_jsonl(src / "events.jsonl") if _key(e) not in have), key=lambda e: e.get("t", ""))
+    dst_dec = read_jsonl(home / "decisions.jsonl")
+    have = {_key(d) for d in dst_dec}
+    used = {d.get("id") for d in dst_dec if d.get("kind") == "question"}
+    n = len(used)
+    remap, new_dec = {}, []
+    for d in sorted((d for d in read_jsonl(src / "decisions.jsonl") if _key(d) not in have), key=lambda d: d.get("t", "")):
+        if d.get("kind") == "question" and d.get("id") in used:
+            n += 1
+            while f"Q{n}" in used:
+                n += 1
+            remap[d["id"]] = f"Q{n}"
+            d = dict(d, id=f"Q{n}", src=f"adopted as Q{n}, was {d['id']}")
+        if d.get("kind") == "question":
+            used.add(d.get("id"))
+        if d.get("answers") in remap:
+            d = dict(d, answers=remap[d["answers"]])
+        new_dec.append(d)
+    files = [f for f in sorted((src / "tasks").glob("*")) if f.is_file() and not (home / "tasks" / f.name).exists()]
+    late = [e for e in new_ev if e.get("t", "") < max((x.get("t", "") for x in read_jsonl(home / "events.jsonl")), default="")]
+    print(f"{a.module}: from {rel(src)} → {rel(home)}: events +{len(new_ev)}, decisions +{len(new_dec)}, task files "
+          f"+{len(files)}" + (f"; questions renumbered: {', '.join(f'{k}→{v}' for k, v in remap.items())}" if remap else "")
+          + (f"; {len(late)} event(s) older than the journal's last — appended at the end" if late else ""))
+    if a.dry:
+        return
+    for e in new_ev:
+        append_jsonl(home / "events.jsonl", e)
+    for d in new_dec:
+        append_jsonl(home / "decisions.jsonl", d)
+    for f in files:
+        shutil.copy2(f, home / "tasks" / f.name)
+    if a.keep:
+        return
+    top = gitx.git("rev-parse", "--show-toplevel", cwd=src.parent).strip() or None
+    tracked = top and gitx.git("ls-files", "--", str(src), cwd=top)
+    if tracked:
+        gitx.git("rm", "-r", "-q", "--cached", "--", str(src), cwd=top)
+    shutil.rmtree(src)
+    print(f"removed {rel(src)}" + (" (staged: git rm)" if tracked else "") + f"; commit the module journal: "
+          f"git add {config.plan_dir()}/{a.module} && git commit -- {config.plan_dir()}/{a.module}")
+
+
 def register(sp):
-    q = sp.add_parser("event", help="task event (or module note) in events.jsonl")
-    q.add_argument("target", metavar="ID|module"); q.add_argument("kind", choices=EVENT_KINDS)
+    q = sp.add_parser("event", help="task event (or module note) in events.jsonl; `revoke --note why [--of KIND]` cancels a wrong one")
+    q.add_argument("target", metavar="ID|module"); q.add_argument("kind", choices=EVENT_KINDS + ["revoke"])
     q.add_argument("--commit", action="append"); q.add_argument("--note"); q.add_argument("--by")
+    q.add_argument("--of", metavar="KIND", help="revoke: the last event of this kind (default: the last event)")
     q.set_defaults(func=cmd_event)
 
     q = sp.add_parser("decide", help="decision (or --ask: question to the user) in decisions.jsonl")
@@ -216,3 +296,10 @@ def register(sp):
     q = sp.add_parser("answer", help="user's answer to question Qn (lands in the module inbox)")
     q.add_argument("qid", metavar="Qn|module/Qn"); q.add_argument("text"); q.add_argument("--module"); q.add_argument("--by")
     q.set_defaults(func=cmd_answer)
+
+    q = sp.add_parser("adopt", help="merge a stray journal of a module (written in another copy) into the module journal; "
+                      "never overwrites, removes the stray one")
+    q.add_argument("module"); q.add_argument("--from", dest="from_", metavar="DIR", help="stray journal dir (default: "
+                   "<plan_dir>/<module> in this copy)")
+    q.add_argument("--dry", action="store_true"); q.add_argument("--keep", action="store_true", help="don't remove it")
+    q.set_defaults(func=cmd_adopt)

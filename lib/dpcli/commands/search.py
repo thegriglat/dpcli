@@ -8,6 +8,7 @@ import time
 
 from .. import config, gitx, reexec
 from ..journal import all_modules, task_cards
+from ..journal import events as journal_events
 from ..util import CLI, DpError, read_json, read_jsonl
 
 
@@ -47,7 +48,7 @@ def cmd_search(a):
                     [str(r.get("summary", "")), str(r.get("how_to_check", "")), str(r.get("dp_feedback", ""))]
                     + [str(x) for x in r.get("not_done") or []]
                     + [f"{k.get('name')}={k.get('value')}" for k in r.get("checks") or []]))
-        for e in read_jsonl(home / "events.jsonl"):
+        for e in journal_events(home):
             if e.get("note"):
                 scan(mod, e.get("task"), "event:" + str(e.get("ev")), e.get("t"), e["note"], e.get("src"), e.get("unparsed"))
         for d in read_jsonl(home / "decisions.jsonl"):

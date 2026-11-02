@@ -85,8 +85,8 @@ def main():
     why = journal(cmd, data.get("cwd"))
     if why:
         print(f"dpcli: {why} into the module journal — only dpcli writes it: cards `task new|set` (--check NAME CMD "
-              f"EXPECT replaces a check, scope+=…), reports — edit <log_dir>/<ID>/report.json and run `report <ID>` "
-              f"again, events `event`, decisions `decide`. Reading is fine (`status`, `log`, `report --show`). A "
+              f"EXPECT replaces a check, scope+=…), reports `report <ID> --set field=value`, a wrong event "
+              f"`event <ID> revoke --note why`, a journal written in another copy `adopt <m>`, decisions `decide`. Reading is fine (`status`, `log`, `report --show`). A "
               f"command is missing — say so in `harness: …`, don't edit the journal.", file=sys.stderr)
         return 2
     lines, body = split(cmd)
