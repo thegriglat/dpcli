@@ -83,6 +83,10 @@ After `init`, commit the result (only the main session commits).
 | `feedback fix F-n --where … [--pr URL]` · `wontfix F-n --why …` · `reopen F-n` | close / reject / reopen |
 | `stats [module] [--since D] [--tokens]` | tasks, created→accepted, rework rounds, frictions; check durations (median/max s); `--tokens`: context tokens of executors, reviewers and coordinators and per task, from Claude Code's subagent logs |
 
+## Parallel copies: slots
+
+Every `accept` run holds a slot — a number free among the project's running accepts in all copies (a lock in the git common dir, released when the run ends; `checks.slots`, default 8; all busy — it waits). Checks get `DPCLI_SLOT` and `DPCLI_PORT` (`checks.port_base` + slot × `checks.port_step`, default 20000 + 10·slot), and `checks.env` values may use `{slot}` / `{port}`: `DATABASE_URL: "postgres://localhost/app_test_{slot}"`. So parallel copies stop sharing one test database and one port.
+
 ## Long checks
 
 `accept` remembers how long each check took (`<log_dir>/<ID>/results.json`). When the same checks took longer than `checks.bg_after` seconds last time (default 100; 0 — never), `accept` runs itself as a background job and prints the wait command (`job wait dp-accept-<ID> <timeout>`); `--fg` stays in the foreground. A check's own timeout: `task new|set … --check-timeout NAME SEC` (default 900). `lock cpu|gpu` runs the command in the foreground with its output (`--tmux` for a window). Job names are per copy (`<copy>~<name>`), so two copies starting `acc` do not collide; `job wait <name>` from the same copy finds its job.
@@ -253,6 +257,7 @@ Commands run via `bash -c` in the task's copy (if there is one; `--here` — in 
 
 ```
 .dpcli/dpcli accept <ID> [--only NAME] [--here|--cwd DIR] [-j 4] [--commit h] [--dry] [--no-accept] [--no-review] [--full] [--bg [--timeout SEC]] [--no-tmux] [--tmux-session S]
+.dpcli/dpcli accept <ID> --baseline   # failed checks re-run on the base in a temporary copy: «pre-existing» or «new» (still FAIL)
 .dpcli/dpcli report <ID> [file|-]  |  report <ID> --show [--full]  |  report --template [ID]
 .dpcli/dpcli report <ID> --set status=done commits+="abc1 fix" not_done-="x"   # amend the stored report
 .dpcli/dpcli review <ID> --verdict accept|rework --from r.json|-  |  review <ID> --note "summary"  |  review <ID> --show [--full]  |  review --template

@@ -58,9 +58,16 @@ areas: []
 
 # Acceptance checks (dpcli accept).
 checks:
-  # Extra environment variables for check commands (none by default); {tmpdir} — a fresh temporary directory.
+  # Extra environment variables for check commands (none by default); {tmpdir} — a fresh temporary directory;
+  # {slot} / {port} — this accept run's slot (0..slots-1, distinct among parallel accepts of all copies) and
+  # port_base + slot*port_step; also always in DPCLI_SLOT / DPCLI_PORT.
   # env:
   #   HOME_FOR_TESTS: "{tmpdir}"
+  #   DATABASE_URL: "postgres://localhost/app_test_{slot}"
+  #   PORT: "{port}"
+  # slots: 8
+  # port_base: 20000
+  # port_step: 10
   # Command template for checks like {tests: …}; {filter} — the test filter from the card.
   # Not set — the tests check is unavailable. Example: "python3 -m pytest -q -k {filter}"
   # tests: "python3 -m pytest -q -k {filter}"

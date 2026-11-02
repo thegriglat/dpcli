@@ -3,6 +3,7 @@ import concurrent.futures as cf
 import fnmatch
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -103,16 +104,81 @@ def judge(exp, code, out):
     return bool(ok), "; ".join(vals) or f"exit {code}"
 
 
+_SLOT = []  # (slot, fd) held by this accept run
+
+
+def lease_slot():
+    """A slot number free among the project's running accepts (all copies share the git common dir): parallel copies
+    get distinct test databases and ports through {slot}/{port}. Held until the process exits. -> slot."""
+    if _SLOT:
+        return _SLOT[0][0]
+    n = max(1, int(config.get("checks.slots", 8) or 8))
+    common = gitx.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+    try:
+        import fcntl
+        d = Path(common) / "dpcli-slots"
+        d.mkdir(exist_ok=True)
+    except (ImportError, OSError):
+        _SLOT.append((0, None))
+        return 0
+    fds = [os.open(d / f"{i}.lock", os.O_RDWR | os.O_CREAT, 0o644) for i in range(n)]
+    for wait in (False, True):
+        for i, fd in enumerate(fds if not wait else fds[:1]):
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+            except OSError:
+                continue
+            if wait:
+                print(f"dpcli: all {n} check slots busy (checks.slots) — waited for slot 0", file=sys.stderr)
+            for other in fds:
+                if other != fd:
+                    os.close(other)
+            _SLOT.append((i, fd))
+            return i
+    return 0
+
+
+def slot_vars(slot):
+    port = int(config.get("checks.port_base", 20000)) + slot * int(config.get("checks.port_step", 10))
+    return {"slot": str(slot), "port": str(port)}
+
+
 def check_env(tid):
-    """Check environment: DPCLI_TASK + checks.env ({tmpdir} is a fresh temp dir per check)."""
-    env = dict(os.environ, DPCLI_TASK=tid)
+    """Check environment: DPCLI_TASK, DPCLI_SLOT, DPCLI_PORT + checks.env ({tmpdir} is a fresh temp dir per check,
+    {slot}/{port} — this run's slot and port base, distinct among parallel accepts)."""
+    sv = slot_vars(lease_slot())
+    env = dict(os.environ, DPCLI_TASK=tid, DPCLI_SLOT=sv["slot"], DPCLI_PORT=sv["port"])
     tmp = None
     for k, v in (config.get("checks.env") or {}).items():
         v = str(v)
         if "{tmpdir}" in v and tmp is None:
             tmp = tempfile.mkdtemp(prefix="dpcli-")
-        env[str(k)] = os.path.expanduser(config.subst(v.replace("{tmpdir}", tmp or ""), task=tid))
+        v = v.replace("{tmpdir}", tmp or "").replace("{slot}", sv["slot"]).replace("{port}", sv["port"])
+        env[str(k)] = os.path.expanduser(config.subst(v, task=tid))
     return env
+
+
+def baseline(card, mod, checks, logdir, tid):
+    """The given (failed) checks re-run on the task's base in a temporary detached copy: a failure there is
+    pre-existing, not the task's. -> ({name: ok}, base short sha) or ({}, reason)."""
+    base = card.get("base") or config.module_branch(mod)
+    sha = gitx.git("rev-parse", "--short", base)
+    if not sha:
+        return {}, f"base {base} not found"
+    tmp = Path(tempfile.mkdtemp(prefix=f"dpcli-base-{tid}-"))
+    r = gitx.gitr("worktree", "add", "-q", "--detach", str(tmp / "copy"), base)
+    if r.returncode:
+        return {}, f"git worktree add: {gitx.gerr(r)}"
+    try:
+        for ln in copies.setup(tmp / "copy"):
+            if "ERROR" in ln:
+                print(f"baseline: {ln}", file=sys.stderr)
+        bl = logdir / "baseline"
+        bl.mkdir(exist_ok=True)
+        return {r[0]: r[1] for r in (run_check(c, str(tmp / "copy"), bl, i, tid) for i, c in enumerate(checks, 1))}, sha
+    finally:
+        gitx.gitr("worktree", "remove", "--force", str(tmp / "copy"))
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def run_check(c, cwd, logdir, idx, tid):
@@ -325,9 +391,18 @@ def cmd_accept(a):
             return r
         res = list(ex.map(one, enumerate(checks, 1)))
     sc_ok, sc_val = scope_check(card, cwd, mod)
+    base_ok, base_sha = {}, ""
+    failed = [c for c, r in zip(checks, res) if not r[1]]
+    if a.baseline and failed:
+        print(f"… baseline: {len(failed)} failed check(s) on the base", file=sys.stderr, flush=True)
+        base_ok, base_sha = baseline(card, mod, failed, logdir, a.id)
+        if not base_ok:
+            print(f"baseline skipped: {base_sha}", file=sys.stderr)
     w = max(len(r[0]) for r in res + [("scope",)])
     for name, ok, val, log, dur in res:
-        print(f"{'PASS' if ok else 'FAIL'} {name:<{w}} {val}" + (f"  [{rel(log)}]" if log and (not ok or a.full) else ""))
+        bnote = "" if ok or name not in base_ok else (
+            f"  · base {base_sha}: FAIL too — pre-existing" if not base_ok[name] else f"  · base {base_sha}: PASS — new")
+        print(f"{'PASS' if ok else 'FAIL'} {name:<{w}} {val}{bnote}" + (f"  [{rel(log)}]" if log and (not ok or a.full) else ""))
     print(f"{'SKIP' if sc_ok is None else 'PASS' if sc_ok else 'FAIL'} {'scope':<{w}} {sc_val}")
     npass = sum(r[1] for r in res)
     allok = npass == len(res) and sc_ok is not False
@@ -355,6 +430,9 @@ def cmd_accept(a):
         summ = "; ".join(f"{n}={'ok' if cur[n]['ok'] else 'FAIL'}:{short(cur[n]['val'], 30)}" for n in cur)
         if sc_ok is False:
             summ += f"; scope=FAIL:{short(sc_val, 60)}"
+        pre = [n for n, ok in base_ok.items() if not ok]
+        if pre:
+            summ += f"; pre-existing on base {base_sha}: {', '.join(pre)}"
         full_set = n_ok == len(allnames)
         need_rev = agents.needs_review(card.get("type")) and not a.here and not a.no_review
         kind = "accepted" if allok and full_set and not a.no_accept and not need_rev else "checked"
@@ -376,6 +454,7 @@ def register(sp):
     q.add_argument("--no-review", dest="no_review", action="store_true",
                    help="types with dpcli_review: accepted without review (default: PASS -> checked, awaits reviewer)")
     q.add_argument("--full", action="store_true", help="log paths for PASS too"); q.add_argument("--by")
+    q.add_argument("--baseline", action="store_true", help="re-run failed checks on the task's base: pre-existing or new")
     q.add_argument("--fg", action="store_true", help="stay in the foreground even if the checks are known to be long")
     q.add_argument("--bg", action="store_true", help=f"in the background via job (long checks); wait with {CLI} job wait dp-accept-<ID>")
     q.add_argument("--timeout", type=int, default=3600, metavar="SEC", help="with --bg: overall background timeout (3600)")

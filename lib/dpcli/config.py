@@ -30,7 +30,8 @@ DEFAULTS = {
     "areas": [],
     "docs_dir": "docs",
     "checks": {
-        "env": {},  # extra env vars for checks; {tmpdir} — a fresh temp dir
+        "env": {},  # extra env vars for checks; {tmpdir} — a fresh temp dir; {slot}/{port} — this run's slot and port
+        "slots": 8, "port_base": 20000, "port_step": 10,  # slots: distinct among parallel accepts of all copies
         "tests": None,  # command template for checks {tests: FILTER}; {filter} — the filter
         "log_dir": "build/dpcli",
         # test-run summary regexp: groups (?P<total>) and (?P<failed>), optionally (?P<skipped>);
