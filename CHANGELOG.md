@@ -1,6 +1,7 @@
 # Changelog
 
 ## 37
+- Hook `PreToolUse` `scope_guard` (Edit/Write/MultiEdit/NotebookEdit, installed by `init`): in a task copy an edit outside the card's `scope` or inside `dont_touch` is refused when made, with the reply to send (`<ID> blocked: needs <file>`); the log dir, artifacts and files outside the copy pass; fails open.
 - Changes of the fork zolotarev/dpcli up to v36 taken in, without its hub: `update` (auto-update, `SessionStart` hook), `contribute`, hub CI (AI review/merge, nightly) removed. `init` no longer adds the `update --auto` hook (an existing one in `.claude/settings.json` can be deleted by hand).
 - `.dpcli` is a plain folder, not a submodule: `install.sh` copies the distribution (latest tag, `--ref vN|branch`), converts a `.dpcli` submodule, drops the old `worktree.setup` for it, refuses to overwrite uncommitted changes in `.dpcli`; rerun to update (`bash .dpcli/install.sh`).
 - Coordinator and reviewer back on opus by default.

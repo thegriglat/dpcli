@@ -42,6 +42,7 @@ Manual installation: copy the files above into `.dpcli` at the project root and 
 | Process description | `.claude/dpcli-workflow.md` |
 | Block between the markers `<!-- dpcli:begin -->` … `<!-- dpcli:end -->` | `CLAUDE.md` |
 | Permission `Bash(.dpcli/dpcli *)` | `.claude/settings.json` |
+| Hooks: `bash_guard` (no file edits through the shell), `scope_guard` (in a task copy: no edits outside the card's `scope` or in `dont_touch`), `context_guard` (main session context over `$DPCLI_CONTEXT_MAX`) | `.claude/settings.json` |
 | Lines `.read_*`, `build/dpcli/` | `.gitignore` |
 
 `init` modes:
