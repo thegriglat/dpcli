@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """PreToolUse hook (Bash): refuse editing project files through the shell (sed -i, perl -i, cat > file <<, python3 -
-heredocs that write); Edit/Write pay only the change. Exit 2 = blocked. Temporary files pass; echo/tee > file are
-not covered on purpose."""
+heredocs that write); Edit/Write pay only the change. Writing the module journal (events/decisions.jsonl, module.json,
+task cards and reports) by any shell means — redirects, tee, cp/mv, git checkout/restore, python -c / heredoc / a
+script file — is refused too: only dpcli writes it. Exit 2 = blocked. Temporary files pass; echo/tee > file of other
+files are not covered on purpose."""
 import json
+import os
 import re
 import sys
 
@@ -14,6 +17,33 @@ SHELL = [  # on every command line outside heredoc bodies, quoted strings remove
 ]
 PY_HEREDOC = re.compile(r"\bpython3?\s+-\s*<<")
 PY_WRITES = re.compile(r"\.write_(?:text|bytes)\(|\bopen\([^)]*['\"][wax]b?\+?['\"]")
+
+
+_J = r"(?:(?:events|decisions)\.jsonl|module\.json|tasks/[A-Z]{2,4}-[A-Z]?\d+[a-z]?(?:\.report|\.review)?\.json)\b"
+JOURNAL_SHELL = [re.compile(rx) for rx in (
+    r">>?\s*['\"]?[^\s|;&<>'\"]*" + _J,  # redirect into it
+    r"\btee\b(?:\s+-\w+)*[^|;&\n]*?" + _J,
+    r"\b(?:cp|mv|install|rsync)\b[^|;&\n]*\s['\"]?[^\s|;&'\"]*" + _J + r"['\"]?\s*(?:$|[|;&\n])",  # as the target
+    r"\bgit\s+(?:checkout|restore)\b[^|;&\n]*" + _J,
+    r"\b(?:sed|perl)\b[^|;&\n]*\s-[a-zA-Z]*i[^|;&\n]*" + _J)]
+JOURNAL_CODE = re.compile(_J + r"|['\"]tasks['\"]")
+CODE_WRITES = re.compile(PY_WRITES.pattern + r"|json\.dump\(")
+PY_FILE = re.compile(r"\bpython3?\b(?:\s+-[A-Za-z]+)*\s+([^\s|;&<>-][^\s|;&<>]*\.py)\b")
+
+
+def journal(cmd, cwd):
+    """Refusal reason when the command writes the module journal, else None."""
+    if any(rx.search(cmd) for rx in JOURNAL_SHELL):
+        return "a shell write"
+    codes = [cmd] if re.search(r"\bpython3?\b", cmd) else []
+    for m in PY_FILE.finditer(cmd):  # a script file: look inside
+        try:
+            codes.append(open(os.path.join(cwd or ".", os.path.expanduser(m[1])), encoding="utf-8", errors="replace").read())
+        except OSError:
+            pass
+    if any(JOURNAL_CODE.search(c) and CODE_WRITES.search(c) for c in codes):
+        return "a script writing"
+    return None
 
 
 def split(cmd):
@@ -48,9 +78,17 @@ def edits(ln):
 
 def main():
     try:
-        cmd = (json.load(sys.stdin).get("tool_input") or {}).get("command") or ""
+        data = json.load(sys.stdin)
+        cmd = (data.get("tool_input") or {}).get("command") or ""
     except (ValueError, AttributeError):
         return 0
+    why = journal(cmd, data.get("cwd"))
+    if why:
+        print(f"dpcli: {why} into the module journal — only dpcli writes it: cards `task new|set` (--check NAME CMD "
+              f"EXPECT replaces a check, scope+=…), reports — edit <log_dir>/<ID>/report.json and run `report <ID>` "
+              f"again, events `event`, decisions `decide`. Reading is fine (`status`, `log`, `report --show`). A "
+              f"command is missing — say so in `harness: …`, don't edit the journal.", file=sys.stderr)
+        return 2
     lines, body = split(cmd)
     hits = [w for w in map(edits, lines) if w]
     writes = [ln for ln in body.split("\n") if PY_WRITES.search(ln) and not any(t.strip("/") in ln for t in TEMP)]

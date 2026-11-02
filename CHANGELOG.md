@@ -1,6 +1,7 @@
 # Changelog
 
 ## 37
+- The module journal (`events.jsonl`, `decisions.jsonl`, `module.json`, task cards, reports, reviews) is written only by dpcli: `scope_guard` refuses Edit/Write on it, `bash_guard` refuses shell writes (redirects, tee, cp/mv onto it, `git checkout/restore`, `sed -i`, python `-c`/heredoc/script file that writes it); reads pass. Seen in transcripts: coordinators patching cards' checks and scope through `python3 -`, executors patching their stored report, the main session `sed -i` on `events.jsonl`.
 - Hook `PreToolUse` `scope_guard` (Edit/Write/MultiEdit/NotebookEdit, installed by `init`): in a task copy an edit outside the card's `scope` or inside `dont_touch` is refused when made, with the reply to send (`<ID> blocked: needs <file>`); the log dir, artifacts and files outside the copy pass; fails open.
 - Changes of the fork zolotarev/dpcli up to v36 taken in, without its hub: `update` (auto-update, `SessionStart` hook), `contribute`, hub CI (AI review/merge, nightly) removed. `init` no longer adds the `update --auto` hook (an existing one in `.claude/settings.json` can be deleted by hand).
 - `.dpcli` is a plain folder, not a submodule: `install.sh` copies the distribution (latest tag, `--ref vN|branch`), converts a `.dpcli` submodule, drops the old `worktree.setup` for it, refuses to overwrite uncommitted changes in `.dpcli`; rerun to update (`bash .dpcli/install.sh`).

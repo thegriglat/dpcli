@@ -53,6 +53,15 @@ class ScopeGuard(unittest.TestCase):
         _tid, tc = self.task()
         self.assertEqual(self.edit(tc / "anything.txt")[0], 0)
 
+    def test_journal_files_refused_everywhere(self):
+        tid, tc = self.task("--scope", "docs/")  # even when the scope covers docs/
+        for f in (self.mc / "docs" / "plan" / "aa" / "events.jsonl", self.mc / "docs" / "plan" / "aa" / "tasks" / f"{tid}.json",
+                  self.mc / "docs" / "plan" / "aa" / "tasks" / f"{tid}.report.json", tc / "docs" / "plan" / "aa" / "decisions.jsonl"):
+            code, err = self.edit(f)
+            self.assertEqual(code, 2, f)
+            self.assertIn("module journal", err)
+        self.assertEqual(self.edit(self.mc / "docs" / "plan" / "aa.md")[0], 0)  # the plan is a document
+
     def test_garbage_input_fails_open(self):
         r = subprocess.run([sys.executable, str(GUARD)], input="not json", capture_output=True, text=True)
         self.assertEqual(r.returncode, 0)

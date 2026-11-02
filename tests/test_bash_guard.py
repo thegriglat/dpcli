@@ -42,6 +42,38 @@ class BashGuard(unittest.TestCase):
                     "python3 - <<'EOF'\nopen('/tmp/a', 'w').write('x')\nEOF"):
             self.assertEqual(run(cmd)[0], 0, cmd)
 
+    def test_journal_writes_blocked(self):
+        for cmd in ("sed -i '/\"t\": \"2026\"/d' docs/plan/tow/events.jsonl",
+                    "cat docs/plan/a/decisions.jsonl >> ~/x/docs/plan/a/decisions.jsonl",
+                    "echo '{}' > docs/plan/a/tasks/AC-1.json", "jq . r.json | tee docs/plan/a/tasks/AC-1.report.json",
+                    "cp /tmp/c.json docs/plan/a/tasks/PR-2.json", "git checkout 0d501dca -- docs/plan/tow/events.jsonl",
+                    "python3 - <<'E'\nimport json\np='docs/plan/a/tasks/PR-5.json'; d=json.load(open(p))\n"
+                    "d['scope'].append('x')\njson.dump(d, open(p, 'w'), ensure_ascii=False)\nE",
+                    "python3 -c \"import json; json.dump({}, open('docs/plan/a/module.json', 'w'))\""):
+            code, err = run(cmd)
+            self.assertEqual(code, 2, cmd)
+            self.assertIn("journal", err)
+
+    def test_journal_write_in_a_script_file_blocked(self):
+        p = Project()
+        self.addCleanup(p.cleanup)
+        (p.tmp / "fix.py").write_text("import json\np = home / 'tasks' / f'{tid}.json'\np.write_text(json.dumps({}))\n")
+        (p.tmp / "read.py").write_text("import json\nprint(open('docs/plan/a/events.jsonl').read())\n")
+        r = subprocess.run([sys.executable, str(GUARD)], capture_output=True, text=True,
+                           input=json.dumps({"tool_input": {"command": "python3 fix.py"}, "cwd": str(p.tmp)}))
+        self.assertEqual(r.returncode, 2, r.stderr)
+        r = subprocess.run([sys.executable, str(GUARD)], capture_output=True, text=True,
+                           input=json.dumps({"tool_input": {"command": "python3 -I read.py"}, "cwd": str(p.tmp)}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_journal_reads_allowed(self):
+        for cmd in ("tail -5 docs/plan/a/events.jsonl", "jq -c . docs/plan/a/tasks/AC-1.json > /tmp/card.json",
+                    "grep x docs/plan/a/decisions.jsonl | wc -l", "cp docs/plan/a/tasks/AC-1.json /tmp/",
+                    "python3 - <<'E'\nimport json,sys\nfor l in open('docs/plan/a/events.jsonl'): "
+                    "sys.stdout.write(json.dumps(json.loads(l)))\nE",
+                    "git log -p -- docs/plan/a/events.jsonl", "git diff HEAD -- docs/plan/a/tasks/AC-1.json"):
+            self.assertEqual(run(cmd)[0], 0, cmd)
+
     def test_missing_script_fails_open(self):
         p = Project()
         self.addCleanup(p.cleanup)
