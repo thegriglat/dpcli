@@ -1,6 +1,7 @@
 # Changelog
 
 ## 37
+- Hook `SubagentStop` `reply_guard` (installed by `init`): a dpcli agent's final reply must be one protocol line for its role (executor `<ID> reported|blocked: …|contract: …`, reviewer `<ID> review accept|rework <n>`, coordinator `<m>: …|<m> done`; a one-line question passes); otherwise it is sent back once with the formats; agents without a dpcli role pass.
 - Parallel copies: every `accept` run holds a slot free among the project's running accepts in all copies (`checks.slots`, lock in the git common dir); checks get `DPCLI_SLOT`/`DPCLI_PORT`, `checks.env` takes `{slot}`/`{port}` — distinct test databases and ports (15 reports).
 - `accept --baseline`: failed checks re-run on the task's base in a temporary detached copy and are marked «pre-existing» or «new»; the verdict stays FAIL, the event notes the pre-existing ones (6 reports).
 - Journal integrity: every record dpcli appends to `events.jsonl` / `decisions.jsonl` carries `_h`, a hash chained to the previous record (appends are locked: parallel agents keep one chain). `status` and `inbox` warn `⚠ journal …` on an edited, removed or inserted line, a line appended by hand, or lines removed since the last commit — catches what hooks miss. Journals without marks read as before.

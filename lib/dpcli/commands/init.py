@@ -363,9 +363,10 @@ class Init:
                        if isinstance(e, dict) for h in e.get("hooks") or [])
         has_guard, has_ctx = has("PreToolUse", "bash_guard.py"), has("UserPromptSubmit", "context_guard.py")
         has_scope = has("PreToolUse", "scope_guard.py")
+        has_reply = has("SubagentStop", "reply_guard.py")
         add = ([perm] if perm not in allow else []) \
             + ([] if has_guard else ["PreToolUse: bash_guard"]) + ([] if has_scope else ["PreToolUse: scope_guard"]) \
-            + ([] if has_ctx else ["UserPromptSubmit: context_guard"])
+            + ([] if has_ctx else ["UserPromptSubmit: context_guard"]) + ([] if has_reply else ["SubagentStop: reply_guard"])
         if not add:
             self.row(".claude/settings.json", "unchanged", perm)
             return
@@ -376,6 +377,8 @@ class Init:
         if not has_scope:  # an edit outside the card's scope is refused when made, not found at accept
             data["hooks"]["PreToolUse"].append({"matcher": "Edit|Write|MultiEdit|NotebookEdit",
                                                 "hooks": [{"type": "command", "command": script("scope_guard.py")}]})
+        if not has_reply:  # the one-line reply protocol was held by the prompt alone
+            data["hooks"]["SubagentStop"].append({"hooks": [{"type": "command", "command": script("reply_guard.py")}]})
         if not has_ctx:  # the main session's context grows unnoticed: it paid most of a module's tokens
             data["hooks"]["UserPromptSubmit"].append({"hooks": [{"type": "command", "command": script("context_guard.py")}]})
         self.put_text(".claude/settings.json", old, json.dumps(data, ensure_ascii=False, indent=2) + "\n", ", ".join(add))

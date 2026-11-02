@@ -139,4 +139,5 @@ class Hook(unittest.TestCase):
         self.assertEqual(sum("bash_guard.py" in c for c in cmds), 1)
         self.assertEqual(sum("context_guard.py" in c for c in cmds), 1)
         self.assertEqual(sum("scope_guard.py" in c for c in cmds), 1)
+        self.assertEqual(sum("reply_guard.py" in c for c in cmds), 1)
         self.assertFalse(any("update --auto" in c for c in cmds))
