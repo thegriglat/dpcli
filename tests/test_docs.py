@@ -2,8 +2,8 @@ import unittest
 
 from helpers import Project
 
-A = '---\ntype: guide\nstatus: active\nmodule: core\nupdated: 2026-01-01\nsummary: "About alpha"\n---\n# A\n\nsee [b](b.md)\n'
-B = '---\ntype: research\nstatus: idea\nupdated: 2026-01-02\nsummary: "Beta"\nconclusion: "c"\ndata: x\napplied_in: y\n---\n# B\n## Sub\n'
+A = '---\ntype: guide\nstatus: active\nmodule: core\nupdated: 2026-01-01\nsummary: "Про альфа"\n---\n# A\n\nсм. [b](b.md)\n'
+B = '---\ntype: research\nstatus: idea\nupdated: 2026-01-02\nsummary: "Бета"\nconclusion: "c"\ndata: x\napplied_in: y\n---\n# B\n## Sub\n'
 
 
 class Docs(unittest.TestCase):
@@ -21,7 +21,7 @@ class Docs(unittest.TestCase):
 
     def test_check_errors(self):
         d = self.p.root / "docs"
-        (d / "nofm.md").write_text("text\n", encoding="utf-8")
+        (d / "nofm.md").write_text("текст\n", encoding="utf-8")
         (d / "bad.md").write_text('---\ntype: bogus\nstatus: active\nsummary: "s"\n---\n[x](nope.md)\n', encoding="utf-8")
         code, out, err = self.p.run("docs", "check")
         self.assertEqual(code, 1)
@@ -32,7 +32,7 @@ class Docs(unittest.TestCase):
     def test_exclude_archive(self):
         arch = self.p.root / "docs" / "archive"
         arch.mkdir()
-        (arch / "old.md").write_text("no frontmatter\n", encoding="utf-8")
+        (arch / "old.md").write_text("без frontmatter\n", encoding="utf-8")
         self.assertIn("errors 0", self.p.ok("docs", "check"))
 
     def test_index(self):
@@ -43,16 +43,16 @@ class Docs(unittest.TestCase):
         self.assertIn("b.md", idx)
         self.assertTrue((self.p.root / "docs" / "registry" / "research.md").is_file())
 
-    # docs index creates a registry/findings.md stub (INDEX.md links to it), so check is clean right away
+    # docs index creates a registry/findings.md stub (INDEX.md links to it) — check is clean right away
     def test_check_after_index(self):
         self.p.ok("docs", "index")
         code, out, err = self.p.run("docs", "check")
         self.assertEqual(code, 0, out)
         f = self.p.root / "docs" / "registry" / "findings.md"
         self.assertTrue(f.is_file())
-        f.write_text(f.read_text(encoding="utf-8") + "## core\n- finding\n", encoding="utf-8")
-        self.p.ok("docs", "index")  # does not overwrite
-        self.assertIn("finding", self.p.ok("docs", "findings"))
+        f.write_text(f.read_text(encoding="utf-8") + "## core\n- вывод\n", encoding="utf-8")
+        self.p.ok("docs", "index")  # не перезаписывает
+        self.assertIn("вывод", self.p.ok("docs", "findings"))
 
     def test_no_status_message(self):
         (self.p.root / "docs" / "c.md").write_text('---\ntype: guide\nsummary: "s"\n---\n# C\n', encoding="utf-8")
@@ -62,7 +62,7 @@ class Docs(unittest.TestCase):
         self.assertNotIn("None", out)
 
     def test_find(self):
-        self.assertIn("docs/a.md", self.p.ok("docs", "find", "alpha"))
+        self.assertIn("docs/a.md", self.p.ok("docs", "find", "альфа"))
         out = self.p.ok("docs", "find", "--type", "research")
         self.assertIn("docs/b.md", out)
         self.assertNotIn("docs/a.md", out)
@@ -77,41 +77,41 @@ class Docs(unittest.TestCase):
     # ---------- docs section ----------
     def _sec_doc(self):
         (self.p.root / "docs" / "s.md").write_text(
-            '---\ntype: guide\nstatus: active\nsummary: "s"\n---\n# Title\nintro\n## Results\nresults-text\n### Details\ndetail\n'
-            '## Results of run\nsecond\n## Data\ntable\n```\n# not a heading\n```\n', encoding="utf-8")
+            '---\ntype: guide\nstatus: active\nsummary: "s"\n---\n# Заголовок\nвступление\n## Итоги\nитог-текст\n### Детали\nдеталь\n'
+            '## Итоги прогона\nвторой\n## Данные\nтаблица\n```\n# не заголовок\n```\n', encoding="utf-8")
 
     def test_section_toc(self):
         self._sec_doc()
         out = self.p.ok("docs", "section", "docs/s.md")
-        self.assertIn("  1 Title", out)
-        self.assertIn("  2   Results", out)
-        self.assertIn("Data", out)
-        self.assertNotIn("not a heading", out)
+        self.assertIn("  1 Заголовок", out)
+        self.assertIn("  2   Итоги", out)
+        self.assertIn("Данные", out)
+        self.assertNotIn("не заголовок", out)
         self.assertNotIn("type:", out)
 
     def test_section_by_number_and_text(self):
         self._sec_doc()
         out = self.p.ok("docs", "section", "docs/s.md", "2")
-        self.assertTrue(out.startswith("## Results\n"), out)
-        self.assertIn("detail", out)  # with subsections
-        self.assertNotIn("second", out)
+        self.assertTrue(out.startswith("## Итоги\n"), out)
+        self.assertIn("деталь", out)  # с подразделами
+        self.assertNotIn("второй", out)
         self.assertNotIn("summary", out)
-        out = self.p.ok("docs", "section", "docs/s.md", "dat")
-        self.assertIn("table", out)
-        self.assertIn("# not a heading", out)
-        self.assertNotIn("results-text", out)
+        out = self.p.ok("docs", "section", "docs/s.md", "дан")
+        self.assertIn("таблица", out)
+        self.assertIn("# не заголовок", out)
+        self.assertNotIn("итог-текст", out)
         # exact match beats prefix; path#section form
-        self.assertIn("results-text", self.p.ok("docs", "section", "docs/s.md", "results"))
-        self.assertIn("second", self.p.ok("docs", "section", "docs/s.md#Results of run"))
+        self.assertIn("итог-текст", self.p.ok("docs", "section", "docs/s.md", "итоги"))
+        self.assertIn("второй", self.p.ok("docs", "section", "docs/s.md#Итоги прогона"))
 
     def test_section_ambiguous_and_missing(self):
         self._sec_doc()
-        code, out, _ = self.p.run("docs", "section", "docs/s.md", "Res")
+        code, out, _ = self.p.run("docs", "section", "docs/s.md", "Ито")
         self.assertEqual(code, 1)
         self.assertIn("ambiguous", out)
         self.assertIn("  2", out)
         self.assertIn("  4", out)
-        code, _, err = self.p.run("docs", "section", "docs/s.md", "no such")
+        code, _, err = self.p.run("docs", "section", "docs/s.md", "нет такого")
         self.assertEqual(code, 1)
         self.assertIn("not found", err)
 
@@ -129,24 +129,24 @@ class Docs(unittest.TestCase):
         code, out, _ = p.run("docs", "check")
         self.assertEqual(code, 1, out)
         self.assertIn("ERROR    docs/big.md", out)
-        self.assertIn("split into section files or move data out", out)
+        self.assertIn("split into section files or move the data out", out)
         self.assertNotIn("old.md: 3 KB", out)
         self.assertNotIn("gen.md: 3 KB", out)
         q = Project({"docs": {"max_kb": 2, "max_kb_mode": "warn"}})
         self.addCleanup(q.cleanup)
         self._big(q.root / "docs" / "big.md")
         out = q.ok("docs", "check")
-        self.assertIn("warning  docs/big.md", out)
+        self.assertIn("WARNING  docs/big.md", out)
 
     def test_summary_rules(self):
         d = self.p.root / "docs"
-        (d / "long.md").write_text('---\ntype: guide\nstatus: active\nsummary: "' + "a" * 141 + '"\n---\n', encoding="utf-8")
+        (d / "long.md").write_text('---\ntype: guide\nstatus: active\nsummary: "' + "а" * 141 + '"\n---\n', encoding="utf-8")
         (d / "todo.md").write_text('---\ntype: guide\nstatus: active\nsummary: "TODO"\n---\n', encoding="utf-8")
         (d / "none.md").write_text('---\ntype: guide\nstatus: active\n---\n', encoding="utf-8")
         code, out, _ = self.p.run("docs", "check")
         self.assertEqual(code, 1)
         self.assertIn("long.md: summary 141 chars > 140", out)
-        self.assertIn("todo.md: summary TODO — fill in summary: conclusion/purpose in one line", out)
+        self.assertIn("todo.md: summary TODO — fill in summary: finding/purpose in one line", out)
         self.assertIn("none.md: no summary", out)
         p = Project({"docs": {"summary_max": 200}})
         self.addCleanup(p.cleanup)
@@ -155,12 +155,12 @@ class Docs(unittest.TestCase):
         p.ok("docs", "check")
 
     def test_init_summary_todo(self):
-        (self.p.root / "docs" / "raw.md").write_text("# Raw\n\nA long first paragraph of text that used to become the summary.\n",
+        (self.p.root / "docs" / "raw.md").write_text("# Сырой\n\nДлинный первый абзац текста, который раньше становился summary.\n",
                                                      encoding="utf-8")
         self.p.ok("docs", "init")
         txt = (self.p.root / "docs" / "raw.md").read_text(encoding="utf-8")
         self.assertIn('summary: "TODO"', txt)
-        self.assertNotIn("A long first paragraph of text that", txt.split("---")[1])
+        self.assertNotIn("Длинный первый абзац текста, который", txt.split("---")[1])
         code, out, _ = self.p.run("docs", "check")
         self.assertEqual(code, 1)
         self.assertIn("raw.md: summary TODO", out)
@@ -169,16 +169,16 @@ class Docs(unittest.TestCase):
     def test_index_compact(self):
         arch = self.p.root / "docs" / "archive"
         arch.mkdir()
-        (arch / "x.md").write_text("old\n", encoding="utf-8")
-        (arch / "y.md").write_text("old\n", encoding="utf-8")
+        (arch / "x.md").write_text("старое\n", encoding="utf-8")
+        (arch / "y.md").write_text("старое\n", encoding="utf-8")
         self.p.ok("docs", "index")
         idx = (self.p.root / "docs" / "INDEX.md").read_text(encoding="utf-8")
         body = idx.split("---", 2)[2]
-        self.assertNotRegex(body, r"(?m)^\|")  # no tables
-        self.assertIn("- [docs/a.md](a.md) — About alpha\n", idx)
-        self.assertIn("- [docs/b.md](b.md) — Beta [idea]", idx)
+        self.assertNotRegex(body, r"(?m)^\|")  # без таблиц
+        self.assertIn("- [docs/a.md](a.md) — Про альфа\n", idx)
+        self.assertIn("- [docs/b.md](b.md) — Бета [idea]", idx)
         self.assertIn("## System guides (guide)", idx)
-        self.assertIn("archive: 2 docs — `.dpcli/dpcli docs find --status closed`", idx)
+        self.assertIn("archive: 2 documents: `.dpcli/dpcli docs find --status closed`", idx)
         self.assertNotIn("x.md", idx)
         for w in ("docs find", "docs section", "docs findings"):
             self.assertIn(w, idx)
@@ -199,14 +199,14 @@ class Docs(unittest.TestCase):
         self.assertFalse((reg / "research.md").exists())
 
     def test_find_format(self):
-        out = self.p.ok("docs", "find", "alpha")
-        self.assertEqual(out.strip(), "docs/a.md — About alpha")
-        self.assertIn("docs/a.md — guide — active — About alpha", self.p.ok("docs", "find", "--long", "alpha"))
+        out = self.p.ok("docs", "find", "альфа")
+        self.assertEqual(out.strip(), "docs/a.md — Про альфа")
+        self.assertIn("docs/a.md — guide — active — Про альфа", self.p.ok("docs", "find", "--long", "альфа"))
         arch = self.p.root / "docs" / "archive"
         arch.mkdir()
-        (arch / "old.md").write_text('---\ntype: plan\nstatus: closed\nsummary: "old"\n---\n', encoding="utf-8")
+        (arch / "old.md").write_text('---\ntype: plan\nstatus: closed\nsummary: "старое"\n---\n', encoding="utf-8")
         self.assertNotIn("old.md", self.p.ok("docs", "find"))
-        self.assertIn("docs/archive/old.md — old", self.p.ok("docs", "find", "--status", "closed"))
+        self.assertIn("docs/archive/old.md — старое", self.p.ok("docs", "find", "--status", "closed"))
 
     def test_no_docs_dir(self):
         p = Project()

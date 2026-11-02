@@ -1,0 +1,82 @@
+name: nightly
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: write
+  checks: read  # needed by the reused review workflow
+jobs:
+  shrink:
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.ci.outputs.pr }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git config --global user.name "dpcli nightly" && git config --global user.email "nightly@users.noreply.github.com"
+      - name: measure
+        run: python3 tools/metrics.py > metrics.json && python3 tools/metrics.py --check || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metrics
+          path: metrics.json
+      - name: anything to do?
+        id: gate
+        run: |
+          pr=$(gh pr list --label nightly-simplify --state open --json number,headRefName,labels --jq '.[0] // empty')
+          new=$(git log --since="25 hours ago" --oneline origin/main | wc -l)
+          # a nightly PR sent back for rework is closed, not reworked: a fresh one from current main is cheaper
+          if [ -n "$pr" ] && jq -e '[.labels[].name] | index("rework")' <<<"$pr" >/dev/null; then
+            gh pr close "$(jq -r .number <<<"$pr")" --delete-branch --comment "Closed: sent back for rework; tonight's nightly starts fresh from main."
+            pr=""
+          fi
+          if [ -n "$pr" ]; then
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          elif [ "$new" -gt 0 ] || [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            echo "task=Make a new nightly simplification: follow .github/prompts/nightly.md." >> "$GITHUB_OUTPUT"
+          else
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          fi
+      - name: shrink
+        id: shrink
+        if: steps.gate.outputs.run == 'yes'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}  # the app's OIDC exchange fails on pull_request_target/schedule
+          display_report: true  # trusted input (our own main branch): the run report goes to the step summary
+          prompt: |
+            ${{ steps.gate.outputs.task }} Current metrics: metrics.json. Run id: ${{ github.run_id }}.
+          claude_args: >-
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python3 -m unittest:*),Bash(python3 tools/metrics.py:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git branch:*),Bash(git rev-parse:*),Bash(ls:*),Bash(wc:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git fetch:*),Bash(gh label create:*)"
+      - name: keep the run transcript (1 day) to see what was tried and denied
+        if: always() && steps.shrink.outputs.execution_file
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-transcript
+          path: ${{ steps.shrink.outputs.execution_file }}
+          retention-days: 1
+      - name: run tests on the nightly PR (PRs opened with the workflow token trigger no workflows)
+        id: ci
+        if: steps.gate.outputs.run == 'yes'
+        run: |
+          pr=$(gh pr list --label nightly-simplify --state open --json number,headRefName --jq '.[0] // empty')
+          [ -n "$pr" ] || exit 0
+          b=$(jq -r .headRefName <<<"$pr"); gh workflow run test.yml --ref "$b" -f ref="$b"  # --ref: the run belongs to the PR head commit
+          echo "pr=$(jq -r .number <<<"$pr")" >> "$GITHUB_OUTPUT"
+  review:
+    needs: shrink
+    if: needs.shrink.outputs.pr != ''
+    uses: ./.github/workflows/review.yml
+    with:
+      pr: ${{ needs.shrink.outputs.pr }}
+    secrets: inherit

@@ -1,4 +1,4 @@
-"""Shared fixture: temp git project with a copy of .dpcli and an isolated dpcli.json."""
+"""Shared fixture: a temporary git project with a copy of the distribution in .dpcli and an isolated dpcli.json."""
 import json
 import os
 import shutil
@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-DIST = REPO / ".dpcli"
+DIST = REPO  # корень репозитория — сам дистрибутив (в проекте — сабмодуль .dpcli)
 LIB = DIST / "lib"
 
 
@@ -21,7 +21,7 @@ def git(*args, cwd, check=True):
 
 
 class Project:
-    """Temp project: <tmp>/proj (git, main), <tmp>/copies (worktree), <tmp>/cache."""
+    """Temporary project: <tmp>/proj (git, main), <tmp>/copies (worktrees), <tmp>/cache."""
 
     def __init__(self, config=None, commit=True):
         self.tmp = Path(tempfile.mkdtemp(prefix="dpcli-test-")).resolve()
@@ -34,7 +34,7 @@ class Project:
         git("config", "user.name", "Test", cwd=self.root)
         git("config", "user.email", "test@example.com", cwd=self.root)
         git("config", "commit.gpgsign", "false", cwd=self.root)
-        shutil.copytree(DIST, self.root / ".dpcli", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(DIST, self.root / ".dpcli", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git", "tests", ".pytest_cache"))
         cfg = {
             "project": "proj",
             "copies_dir": str(self.copies),
@@ -101,7 +101,7 @@ def run(cli, *args, cwd, env=None, input=None, timeout=60):
 
 
 class ProjectCase(unittest.TestCase):
-    """One project per class (setUpClass); for isolation use a separate Project in the test."""
+    """One project per class (setUpClass); for isolation create a Project in the test."""
     CONFIG = None
 
     @classmethod

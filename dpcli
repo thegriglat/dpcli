@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""dpcli — module journal, task cards and acceptance. Entry point: the package is in lib/dpcli next to this file."""
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 10):
+    sys.exit("dpcli: Python ≥ 3.10 required")
+sys.dont_write_bytecode = True  # no __pycache__ inside .dpcli: copies stay clean for git
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+from dpcli.cli import main  # noqa: E402
+
+main()

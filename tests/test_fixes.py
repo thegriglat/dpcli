@@ -1,4 +1,4 @@
-"""dpcli fix tests: paths with spaces/Cyrillic, docs check, contract refs, copies (git-crypt, gc)."""
+"""dpcli fixes: paths with spaces/Cyrillic, docs check, contract links, copies (git-crypt, gc)."""
 import os
 import subprocess
 import sys
@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".dpcli" / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from dpcli import config, copies, gitx  # noqa: E402
 from dpcli.commands import accept, branches, docs, task  # noqa: E402
@@ -18,7 +18,7 @@ def sh(*args, cwd):
 
 
 class RepoCase(unittest.TestCase):
-    """Temp repo main in tmp/main; the process cwd is inside it."""
+    """Temporary main repository in tmp/main; the process cwd is inside it."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -45,18 +45,18 @@ class RepoCase(unittest.TestCase):
 
 
 class ScopePaths(RepoCase):
-    NAME = "docs/Мои заметки/Контракт.md"  # Cyrillic + spaces on purpose
+    NAME = "docs/Мои заметки/Контракт.md"
 
     def test_pat_whole_path_with_spaces(self):
         pats = accept._pat(self.NAME)
         self.assertTrue(accept.path_in(self.NAME, pats))
 
     def test_pat_with_note(self):
-        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py — function f")))
-        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py function f")))
-        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"{self.NAME} — section 2")))
-        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"`{self.NAME}` (section)")))
-        self.assertFalse(accept.path_in("src/y.py", accept._pat("src/x.py — function f")))
+        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py — функция f")))
+        self.assertTrue(accept.path_in("src/x.py", accept._pat("src/x.py функция f")))
+        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"{self.NAME} — раздел 2")))
+        self.assertTrue(accept.path_in(self.NAME, accept._pat(f"`{self.NAME}` (раздел)")))
+        self.assertFalse(accept.path_in("src/y.py", accept._pat("src/x.py — функция f")))
 
     def test_changed_files_unquoted(self):
         f = self.main / self.NAME
@@ -85,10 +85,10 @@ class ScopePaths(RepoCase):
 
 class DocsFrontmatter(unittest.TestCase):
     def test_related_block_list(self):
-        fm, body = docs.split_fm("---\ntype: plan\nupdated: 2026-10-07\nrelated:\n  - docs/a.md\n  - docs/b c.md\n---\n\nbody\n")
+        fm, body = docs.split_fm("---\ntype: plan\nupdated: 2026-10-07\nrelated:\n  - docs/a.md\n  - docs/b c.md\n---\n\nтело\n")
         self.assertEqual(fm["related"], ["docs/a.md", "docs/b c.md"])
         self.assertEqual(fm["updated"], "2026-10-07")
-        self.assertEqual(body.strip(), "body")
+        self.assertEqual(body.strip(), "тело")
 
     def test_related_inline_list(self):
         fm, _ = docs.split_fm('---\ntype: plan\nrelated: [docs/a.md, docs/b.md]\n---\nx')
@@ -97,12 +97,12 @@ class DocsFrontmatter(unittest.TestCase):
         self.assertEqual(fm["related"], ["docs/a.md"])
 
     def test_flat_fallback(self):
-        fm, _ = docs.split_fm('---\nsummary: "Conclusion: something"\nrelated: []\n---\nx')
+        fm, _ = docs.split_fm('---\nsummary: "Вывод: что-то"\nrelated: []\n---\nx')
         self.assertEqual(fm["related"], [])
-        self.assertEqual(fm["summary"], "Conclusion: something")
+        self.assertEqual(fm["summary"], "Вывод: что-то")
 
     def test_no_frontmatter(self):
-        self.assertIsNone(docs.split_fm("text")[0])
+        self.assertIsNone(docs.split_fm("текст")[0])
 
 
 class DocsCheckPaths(RepoCase):
@@ -124,7 +124,7 @@ class DocsCheckPaths(RepoCase):
         (self.main / "docs").mkdir()
         good = "---\ntype: plan\nstatus: active\nupdated: 2026-01-01\nsummary: ok\nrelated:\n  - docs/good.md\n---\nt\n"
         (self.main / "docs/good.md").write_text(good)
-        (self.main / "docs/bad.md").write_text("no frontmatter")
+        (self.main / "docs/bad.md").write_text("без frontmatter")
         self.cfg()
         ctx = docs.Ctx()
 
@@ -202,14 +202,66 @@ class Copies(RepoCase):
     def test_remove_copy_refuses_work(self):
         self.cfg()
         path = self.make_copy()
-        (path / "new.txt").write_text("work")
+        (path / "new.txt").write_text("работа")
         why, _ = branches.remove_copy(path)
-        self.assertIn("untracked", why)
+        self.assertIn("untracked files", why)
         (path / "new.txt").unlink()
         (path / "a.txt").write_text("changed")
         why, _ = branches.remove_copy(path)
-        self.assertIn("dirty", why)
+        self.assertIn("dirty copy", why)
         self.assertTrue(path.exists())
+
+    def test_remove_copy_status_noise_without_changes(self):
+        # a pre-commit hook restored the file: status says MM, content equals HEAD
+        self.cfg()
+        path = self.make_copy()
+        (path / "a.txt").write_text("b")
+        sh("add", "a.txt", cwd=path)
+        (path / "a.txt").write_text("a")
+        why, _ = branches.remove_copy(path)
+        self.assertIsNone(why)
+        self.assertFalse(path.exists())
+
+    def test_remove_copy_with_submodule(self):
+        sub = self.main.parent / "sub"
+        sub.mkdir()
+        sh("init", "-q", "-b", "main", cwd=sub)
+        (sub / "s.txt").write_text("s")
+        sh("add", ".", cwd=sub)
+        sh("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "s", cwd=sub)
+        sh("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "lib", cwd=self.main)
+        sh("commit", "-q", "-m", "sub", cwd=self.main)
+        self.cfg()
+        path = self.make_copy()
+        sh("-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init", cwd=path)
+        (path / "lib" / "work.txt").write_text("работа")
+        why, _ = branches.remove_copy(path)
+        self.assertIn("submodules", why)
+        sh("add", "work.txt", cwd=path / "lib")
+        sh("-c", "user.email=t@t", "-c", "user.name=t", "stash", "-q", cwd=path / "lib")
+        why, _ = branches.remove_copy(path)
+        self.assertIn("submodules", why)
+        sh("stash", "pop", "-q", cwd=path / "lib")
+        # a commit only in the copy's submodule repository would be lost with it
+        sh("add", "work.txt", cwd=path / "lib")
+        sh("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "w", cwd=path / "lib")
+        sh("add", "lib", cwd=path)
+        sh("commit", "-q", "-m", "pointer", cwd=path)
+        why, _ = branches.remove_copy(path)
+        self.assertIn("submodules", why)
+        sh("reset", "-q", "--hard", "HEAD~1", cwd=path)
+        sh("submodule", "update", "-q", cwd=path)
+        # the check itself fails: block, do not assume clean
+        dotgit = path / "lib" / ".git"
+        good = dotgit.read_text()
+        dotgit.write_text("gitdir: /nonexistent\n")
+        why, _ = branches.remove_copy(path)
+        self.assertIn("cannot check submodules", why)
+        dotgit.write_text(good)
+        sh("branch", "-q", "-D", "main", cwd=path / "lib")
+        why, _ = branches.remove_copy(path)
+        self.assertIsNone(why)
+        self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

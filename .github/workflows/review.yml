@@ -1,0 +1,53 @@
+name: review
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number (for PRs opened by workflows)
+        required: true
+  workflow_call:  # the nightly job reviews its own PR in-run: the actor stays whoever started the nightly
+    inputs:
+      pr:
+        type: string
+        required: true
+concurrency:
+  group: review-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: write  # tools/decide.py approves test runs waiting for approval
+  checks: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # base branch only: the PR's code is never checked out or executed in this privileged job
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git config --global user.name "dpcli review" && git config --global user.email "review@users.noreply.github.com"
+      - name: merge main into the PR (tests and review see what would land)
+        run: python3 tools/sync.py "$PR"
+      - name: AI review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}  # the app's OIDC exchange fails on pull_request_target/schedule
+          # contributors without write access are the point of the hub; the reviewer only reads and comments,
+          # and the verdict is acted on by tools/decide.py from the base branch (only the bot's VERDICT counts)
+          allowed_non_write_users: "*"
+          prompt: |
+            Repository ${{ github.repository }}, pull request #${{ env.PR }}.
+            Follow .github/prompts/review.md exactly.
+          claude_args: >-
+            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh search issues:*),Bash(gh issue view:*)"
+      - name: merge, rework or reject
+        run: python3 tools/decide.py "$PR"

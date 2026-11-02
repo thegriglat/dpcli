@@ -21,10 +21,10 @@ class Pure(unittest.TestCase):
     def test_deep_merge(self):
         m = config.merge(config.DEFAULTS, {"checks": {"tests": "pytest {filter}"}, "gc": {"ignore_globs": ["*.uid"]}})
         self.assertEqual(m["checks"]["tests"], "pytest {filter}")
-        self.assertEqual(m["checks"]["log_dir"], "build/dpcli")  # sibling keys preserved
+        self.assertEqual(m["checks"]["log_dir"], "build/dpcli")  # соседние ключи сохранены
         self.assertEqual(m["gc"]["ignore_dirs"], ["build", "__pycache__"])
         self.assertEqual(m["gc"]["ignore_globs"], ["*.uid"])
-        self.assertEqual(config.DEFAULTS["checks"]["tests"], None)  # original unchanged
+        self.assertEqual(config.DEFAULTS["checks"]["tests"], None)  # исходник не изменён
 
     def test_merge_none_keeps_default(self):
         m = config.merge(config.DEFAULTS, {"main_branch": None})
@@ -37,7 +37,7 @@ class Pure(unittest.TestCase):
 
 
 class InProject(unittest.TestCase):
-    """Via CLI in a temp project: file priority and templates."""
+    """Via the CLI in a temporary project: file precedence and templates."""
 
     def test_json_beats_yml(self):
         p = Project()

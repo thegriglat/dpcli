@@ -6,7 +6,7 @@ from helpers import DIST, Project
 HAS_INIT = (DIST / "lib" / "dpcli" / "commands" / "init.py").is_file()
 
 
-@unittest.skipUnless(HAS_INIT, "commands/init.py not present yet")
+@unittest.skipUnless(HAS_INIT, "no commands/init.py yet")
 class Init(unittest.TestCase):
     def setUp(self):
         self.p = Project()
@@ -51,10 +51,10 @@ class Init(unittest.TestCase):
     def test_preserves_claude_md(self):
         p = Project()
         self.addCleanup(p.cleanup)
-        (p.root / "CLAUDE.md").write_text("# My project\nrules\n", encoding="utf-8")
+        (p.root / "CLAUDE.md").write_text("# Мой проект\nправила\n", encoding="utf-8")
         p.ok("init")
         md = (p.root / "CLAUDE.md").read_text(encoding="utf-8")
-        self.assertTrue(md.startswith("# My project\nrules"))
+        self.assertTrue(md.startswith("# Мой проект\nправила"))
         self.assertEqual(md.count("<!-- dpcli:begin"), 1)
 
     def test_dry_run(self):
@@ -66,3 +66,74 @@ class Init(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalLayer(unittest.TestCase):
+    """Project layer .dpcli-local/: survives distribution updates, rendered on top of it."""
+
+    def setUp(self):
+        self.p = Project()
+        self.addCleanup(self.p.cleanup)
+        self.loc = self.p.root / ".dpcli-local"
+        (self.loc / "agents").mkdir(parents=True)
+        (self.loc / "skills" / "start-to-do").mkdir(parents=True)
+        (self.loc / "skills" / "deploy").mkdir(parents=True)
+        (self.loc / "agents" / "dp-engineer.append.md").write_text("- Project rule: run `make lint` before accept.\n")
+        (self.loc / "agents" / "dp-dba.md").write_text(
+            "---\nname: dp-dba\ndescription: \"database migrations for {{project}}\"\nmodel: sonnet\n"
+            "dpcli_role: executor\ndpcli_review: true\n---\nYou write migrations.\n")
+        (self.loc / "skills" / "start-to-do" / "SKILL.md").write_text("---\nname: start-to-do\ndescription: \"local\"\n---\nLOCAL\n")
+        (self.loc / "skills" / "deploy" / "SKILL.md").write_text("---\nname: deploy\ndescription: \"deploy\"\n---\nDeploy.\n")
+        (self.loc / "workflow.md").write_text("- Staging DB is shared: always `lock cpu db`.\n")
+        (self.loc / "claude-md.md").write_text("- Ask before touching billing.\n")
+        self.p.ok("init")
+
+    def read(self, rel):
+        return (self.p.root / rel).read_text()
+
+    def test_agent_append_and_own_agent(self):
+        eng = self.read(".claude/agents/dp-engineer.md")
+        self.assertIn("You are a", eng)  # distribution body kept
+        self.assertTrue(eng.rstrip().endswith("run `make lint` before accept."))
+        self.assertIn("database migrations for proj", self.read(".claude/agents/dp-dba.md"))
+        self.assertIn("dp-dba", self.p.ok("agents"))
+        self.assertIn("local", [l.split()[3] for l in self.p.ok("agents").splitlines() if l.startswith("dp-dba")])
+
+    def test_skills_override_and_add(self):
+        self.assertIn("LOCAL", self.read(".claude/skills/start-to-do/SKILL.md"))
+        self.assertIn("Deploy.", self.read(".claude/skills/deploy/SKILL.md"))
+
+    def test_project_rules_in_workflow_and_claude_md(self):
+        wf = self.read(".claude/dpcli-workflow.md")
+        self.assertIn("## Project rules", wf)
+        self.assertIn("always `lock cpu db`", wf)
+        cm = self.read("CLAUDE.md")
+        self.assertIn("Ask before touching billing.", cm.split("<!-- dpcli:end -->")[0])
+
+    def test_survives_distribution_update_and_is_idempotent(self):
+        # simulate an update of the distribution: agent text changes upstream
+        f = self.p.root / ".dpcli" / "agents" / "dp-engineer.md"
+        f.write_text(f.read_text().replace("You are a", "UPDATED: you are a"))
+        self.p.ok("init")
+        eng = self.read(".claude/agents/dp-engineer.md")
+        self.assertIn("UPDATED: you are a", eng)
+        self.assertIn("make lint", eng)
+        self.assertIn("up to date", self.p.ok("init", "--check"))
+
+    def test_readme_created_once(self):
+        readme = self.loc / "README.md"
+        self.assertTrue(readme.is_file())
+        readme.write_text("mine\n")
+        self.p.ok("init")
+        self.assertEqual(readme.read_text(), "mine\n")
+
+
+class Hook(unittest.TestCase):
+    def test_session_start_update_hook_added_once(self):
+        p = Project()
+        self.addCleanup(p.cleanup)
+        p.ok("init")
+        p.ok("init")
+        st = json.loads((p.root / ".claude" / "settings.json").read_text())
+        cmds = [h["command"] for e in st["hooks"]["SessionStart"] for h in e["hooks"]]
+        self.assertEqual(sum("update --auto" in c for c in cmds), 1)

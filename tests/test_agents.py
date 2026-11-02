@@ -18,7 +18,7 @@ def expected():
     return ex, rev
 
 
-NEW_AGENT = "---\nname: dp-custom\ndescription: custom\ndpcli_role: executor\ndpcli_review: true\n---\nText\n"
+NEW_AGENT = "---\nname: dp-custom\ndescription: свой\ndpcli_role: executor\ndpcli_review: true\n---\nТекст\n"
 
 
 class Agents(unittest.TestCase):
@@ -35,7 +35,7 @@ class Agents(unittest.TestCase):
         self.assertTrue(ex)
         code, out, err = self.new("nope")
         self.assertNotEqual(code, 0)
-        listed = err.split("have:")[1].split(";")[0]
+        listed = err.split("available:")[1].split(";")[0]
         self.assertEqual({x.strip() for x in listed.split(",")}, ex)
 
     def test_non_executor_rejected(self):
@@ -63,7 +63,7 @@ class Agents(unittest.TestCase):
     def test_custom_agent(self):
         (self.p.root / ".dpcli" / "agents" / "dp-custom.md").write_text(NEW_AGENT, encoding="utf-8")
         mc = self.p.copies / "proj" / "aa"
-        # agents are read from the current copy root: put it there too
+        # agents are read from the current copy's root: put them there too
         (mc / ".dpcli" / "agents").mkdir(parents=True, exist_ok=True)
         (mc / ".dpcli" / "agents" / "dp-custom.md").write_text(NEW_AGENT, encoding="utf-8")
         code, out, err = self.new("dp-custom")
@@ -83,7 +83,7 @@ class Agents(unittest.TestCase):
         code, _, err = p.run("task", "new", "aa", "--type", "dp-engineer", "--title", "T")
         self.assertNotEqual(code, 0)
         self.assertIn("solo", err)
-        self.assertNotIn("boss", err.split("have:")[1].split(";")[0])
+        self.assertNotIn("boss", err.split("available:")[1].split(";")[0])
 
 
 if __name__ == "__main__":

@@ -1,88 +1,111 @@
 # dpcli
 
-[![tests](https://github.com/thegriglat/dpcli/actions/workflows/tests.yml/badge.svg)](https://github.com/thegriglat/dpcli/actions/workflows/tests.yml)
-![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![deps](https://img.shields.io/badge/dependencies-none-brightgreen)
+**Run a team of Claude Code agents on a real codebase — with a journal, acceptance checks, isolated worktrees, and a process that improves itself.**
+
+[![tests](https://github.com/zolotarev/dpcli/actions/workflows/test.yml/badge.svg)](https://github.com/zolotarev/dpcli/actions/workflows/test.yml)
+![python](https://img.shields.io/badge/python-%E2%89%A53.10-blue)
+![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**A portable process tool for multi-agent [Claude Code](https://docs.claude.com/en/docs/claude-code) projects.**
+One main session plans. A coordinator per module writes contracts and task cards. Executors each work on one task in their own git worktree. A reviewer with a fresh context checks risky work. dpcli is the single CLI they all use to hand work over — so agents exchange **IDs and commands, not walls of text**, and every decision, report and verdict lands in an append-only journal in git.
 
-Multi-agent work burns context: coordinators retell plans to executors, executors retell results back, reviewers re-read everything. dpcli replaces retelling with a journal and short structured messages — agents pass an ID and a command, details are read on demand.
+```
+$ .dpcli/dpcli task brief BL-1          # the whole message a coordinator sends an executor
+BL-1 dp-engineer: Invoice totals
+Copy: ~/worktrees/app/billing-BL-1  branch: billing/BL-1 (from feature/billing)
+Do: .dpcli/dpcli task show BL-1  · plan: .dpcli/dpcli plan billing <section>
+Scope: only src/billing.py
+Done when: .dpcli/dpcli accept BL-1 --dry → PASS; report: build/dpcli/BL-1/report.json → .dpcli/dpcli report BL-1
+Reply: one line «BL-1 reported» | «BL-1 blocked: <reason ≤15 words>» | «BL-1 contract: <what to change>»
 
-- **Module journal** — task cards, reports, events, decisions and questions to the user, stored as plain JSON/JSONL next to the plan.
-- **Task cards with explicit boundaries** — `goal`, `scope`, `dont_touch` and acceptance checks; a card without them is not issued.
-- **Deterministic acceptance** — `accept` runs the card's checks (exit code, regex, numeric thresholds, project tests) and verifies the diff stayed inside `scope`.
-- **Review** — structured reviewer verdicts (`accept` / `rework`) attached to the task.
-- **Branches and working copies** — a git worktree per module and per task, with git-crypt, hooks and `node_modules` set up; `sync`, `merge`, `deliver` (squash + journal → `decisions.md`, `summary.md`) and `gc`.
-- **Docs registry** — frontmatter checks, index, section lookup; optional semantic search via Ollama.
-- **Non-destructive setup** — `init` renders agents, skills and a workflow description into `.claude/` and never overwrites the project's own files.
+$ .dpcli/dpcli accept BL-1 --dry
+PASS unit  exit 0
+PASS scope 1 file(s) within bounds
+BL-1: 1/1 in .
+
+$ .dpcli/dpcli status
+billing: created 1 | event 0m ago | feature/billing 6509356 0m @ .
+  BL-1 created 0m engineer billing/BL-1 1900700 0m
+  ? Q1 awaits decision (0m): Round tax per line or per invoice?
+```
+
+## Why
+
+Multi-agent coding falls apart in predictable ways: agents retell each other's context and burn tokens, edit files outside their task, "pass" by weakening tests, overwrite each other's work, and repeat the same mistakes forever. dpcli turns these into mechanics:
+
+| Problem | dpcli |
+|---|---|
+| Context bloat between agents | A message protocol of one-line IDs; details are read from the journal on demand |
+| Agents wander outside the task | Task cards with `scope` / `dont_touch`; `accept` fails on out-of-scope changes |
+| "Done" that isn't | Executable acceptance checks with thresholds; risk-based fresh-context review |
+| Agents trample each other | One git worktree and branch per task; locks for CPU/GPU-heavy runs |
+| Same frictions every week | Agents log frictions as they work; dpcli clusters them, fixes ship as PRs to this repo, every project gets them on update |
+
+> **Status:** released — the core (journal, cards, acceptance, worktrees, delivery), the installer, the friction ledger (`feedback`, `stats`, `contribute`), auto-update and the hub CI (tests, budgets, AI review and merge, nightly simplification). See [ROADMAP.md](ROADMAP.md).
+
+## Quick start
+
+In the root of an existing git project:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zolotarev/dpcli/main/install.sh | bash
+# options: --lang ru --commit-lang en --tools (install rg, fd, jq, ast-grep) --yes
+```
+
+The installer adds dpcli as the git submodule `.dpcli`, asks which language agents should write in (and, separately, commit messages), creates `dpcli.yml`, and runs `.dpcli/dpcli init` — agents, skills and the process description land in `.claude/`. Commit the result, then in Claude Code:
+
+```
+> Read .claude/dpcli-workflow.md and plan module "billing" from docs/plan/billing.md
+```
+
+Requirements: git, Python ≥ 3.10. No other dependencies.
 
 ## How it works
 
-```
- user ⇄ main session ──module new──▶ module coordinator ──task brief──▶ executor(s)
-            ▲                          │      ▲                            │
-            │  status / digest         │      └──── <ID> reported ─────────┘
-            │                          │ accept (checks + scope) → review (fresh reviewer)
-            └──── decide / answer ─────┘ merge → sync → deliver
-```
-
-| From → to | Message |
-|---|---|
-| coordinator → executor | output of `dpcli task brief <ID>`, as is |
-| executor → coordinator | `<ID> reported` \| `<ID> blocked: <reason>` |
-| reviewer → coordinator | `<ID> review accept` \| `<ID> review rework <n>` |
-| coordinator → main | `<m>: <n> accepted, <n> in progress; gate Q<n>` |
-
-## Requirements
-
-- Python ≥ 3.10, standard library only (PyYAML is used if present);
-- git;
-- optional: tmux (background jobs), Ollama with `bge-m3` for semantic search (off by default).
-
-## Installation
-
-```sh
-cp -r .dpcli /path/to/project/      # root of a git project
-cd /path/to/project
-.dpcli/dpcli init
+```mermaid
+flowchart LR
+  U((user)) --- M[main session]
+  M -- "module new" --> C[coordinator]
+  C -- "task brief" --> E1[executor<br/>own worktree]
+  C -- "task brief" --> E2[executor<br/>own worktree]
+  E1 -- "ID reported" --> C
+  C -- "accept → review" --> R[reviewer<br/>fresh context]
+  C -- "gate Qn" --> M
+  E1 & E2 & C & R --> J[(journal in git)]
 ```
 
-`init` is idempotent: it creates `dpcli.yml`, renders agents and skills into `.claude/`, adds a block to `CLAUDE.md` and a permission to `.claude/settings.json`. Commit `.dpcli/` and `.claude/` afterwards.
+- **Journal** — `docs/plan/<module>/`: cards, reports, reviews, `events.jsonl`, `decisions.jsonl`. Append-only, readable by humans (`render`) and agents (`status`, `log`, `inbox`, `search`).
+- **Cards and acceptance** — `task new` with scope, checks (`exit=0`, regex, numeric thresholds, test filters), contracts; `accept` runs them and records PASS/FAIL.
+- **Branches and copies** — module and task branches, one worktree per task, `merge`, `deliver` (squash a finished module into its base), `gc`.
+- **Long runs** — `job start/wait` and shared `lock cpu|gpu` so agents don't poll or collide.
 
-## Quick example
+Full reference: [docs/guide.md](docs/guide.md).
 
-```sh
-.dpcli/dpcli module new payments --code PY          # module branch + working copy + journal
-.dpcli/dpcli task new payments --type dp-engineer --title "Amount rounding" \
-  --goal "Amounts are rounded to cents" --scope src/money.py --test rounding \
-  --check no_todo "grep -c TODO src/money.py" "re:^0$"
-.dpcli/dpcli task brief PY-1                         # message for the executor
-.dpcli/dpcli report PY-1 < r.json                    # executor's report
-.dpcli/dpcli accept PY-1                             # PASS / FAIL
-.dpcli/dpcli status                                  # tasks, branches, open questions
-.dpcli/dpcli deliver payments                        # squash into the module base
+## A self-improving network
+
+Every project using dpcli is a node; this repository is the hub.
+
+```mermaid
+flowchart LR
+  A[project A] -- PR / issue 'feedback' --> H[(dpcli hub)]
+  B[project B] -- PR / issue 'feedback' --> H
+  H -- CI: tests · budgets · AI review --> V{verdict}
+  V -- accept: merge + tag --> UP[dpcli update in every project]
+  V -- rework / reject + arguments --> A
+  N[nightly: measure & shrink] --> H
 ```
 
-Full reference — config, commands, card format, workflow: [.dpcli/README.md](.dpcli/README.md).
+1. Agents log frictions as one line while they work.
+2. `dpcli feedback` clusters them; project-specific fixes go into the project's `.dpcli-local/`, dpcli-level fixes become a pull request here via `dpcli contribute` (or a `+1` on an existing one).
+3. CI runs the tests and size budgets, an AI reviewer accepts, asks for rework, or rejects with arguments.
+4. On session start `dpcli update` pulls the new version into every project — and tells each node what happened to its own PRs.
+5. A nightly job measures how heavy dpcli got and opens a PR that makes it smaller.
 
-## Repository layout
+See [ROADMAP.md](ROADMAP.md) for where this stands and [SECURITY.md](SECURITY.md) for the trust model.
 
-| Path | Contents |
-|---|---|
-| `.dpcli/` | the distribution — everything copied into a project |
-| `.dpcli/dpcli`, `.dpcli/lib/dpcli/` | entry point and package |
-| `.dpcli/agents/`, `.dpcli/skills/`, `.dpcli/templates/` | agent definitions, skills, workflow and `CLAUDE.md` templates |
-| `.dpcli/dpcli.example.yml` | annotated config |
-| `tests/` | unittest suite |
+## Contributing
 
-## Development
-
-```sh
-python3 -m unittest discover -s tests
-```
-
-Bump `VERSION` in `.dpcli/lib/dpcli/__init__.py` on every change: older copies in worktrees re-exec the newer one from the main copy.
+The easiest way is to use dpcli: frictions become PRs on their own. Manual PRs are welcome too — see [CONTRIBUTING.md](CONTRIBUTING.md). Tests: `python3 -m unittest discover -s tests`.
 
 ## License
 
